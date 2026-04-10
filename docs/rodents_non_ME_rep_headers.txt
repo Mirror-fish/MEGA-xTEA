@@ -1,0 +1,16 @@
+Satellite
+SAT
+MSAT
+direct repeat
+Simple Repeat
+STR47
+Multicopy gene
+DRB_RN
+ARTEFACT
+scRNA
+tRNA
+Unknown
+rRNA
+snRNA
+centromeric
+Y-chromosome

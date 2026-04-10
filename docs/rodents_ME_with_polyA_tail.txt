@@ -1,0 +1,13 @@
+SINE
+SINE1/7SL
+SINE2/tRNA
+SINE3/5S
+L1
+L2
+RTEX
+Non-LTR Retrotransposon
+L1-dep
+B2
+Alu
+B4
+ID

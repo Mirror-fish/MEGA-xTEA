@@ -1,0 +1,31 @@
+# Compiled
+*.so
+*.o
+*.pyc
+__pycache__/
+
+# Build
+external/htslib/*.o
+external/htslib/*.so
+external/htslib/htslib
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Output
+result_out/
+*.bam
+*.bai
+*.cram
+*.crai
+*.mk
+
+# Models
+models/*.pkl
+
+# OS
+.DS_Store
+Thumbs.db

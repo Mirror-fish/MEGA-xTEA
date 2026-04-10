@@ -1,0 +1,16 @@
+Satellite
+satellite
+SAT
+MSAT
+Pseudogene
+snRNA
+KER
+HSFAU
+ARTEFACT
+scRNA
+tRNA
+Unknown
+rRNA
+acromeric
+centromeric
+subtelomeric
