@@ -71,7 +71,20 @@ Python modules in `megaxtea/` provide the accuracy-critical post-processing:
 
 ## Installation
 
-### Quick Install
+### Docker (Recommended)
+
+```bash
+git clone https://github.com/Mirror-fish/MEGA-xTEA.git
+cd MEGA-xTEA
+docker build -t mega-xtea:latest .
+
+# Verify
+docker run --rm mega-xtea:latest --version
+```
+
+See [docs/docker-guide.md](docs/docker-guide.md) for complete Docker usage including batch processing, Singularity conversion, Snakemake integration, and HPC deployment.
+
+### Native Install
 
 ```bash
 git clone https://github.com/Mirror-fish/MEGA-xTEA.git

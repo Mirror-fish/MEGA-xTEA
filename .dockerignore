@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.gitignore
+external/
+models/*.pkl
+tests/
+docs/analysis-report.html
+*.bam
+*.bai
+*.cram
+*.crai
+*.mk
+*.so
+result_out/

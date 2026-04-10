@@ -1,0 +1,105 @@
+# ============================================================
+# MEGA-xTEA Docker Image
+# Multi-stage build: compile C++ core → slim runtime image
+# ============================================================
+
+# ---------- Stage 1: Build ----------
+FROM ubuntu:22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    g++ \
+    make \
+    autoconf \
+    automake \
+    libtool \
+    pkg-config \
+    zlib1g-dev \
+    libbz2-dev \
+    liblzma-dev \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    wget \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Build htslib 1.19 from source
+WORKDIR /tmp
+RUN wget -q https://github.com/samtools/htslib/releases/download/1.19/htslib-1.19.tar.bz2 && \
+    tar xjf htslib-1.19.tar.bz2 && \
+    cd htslib-1.19 && \
+    ./configure --prefix=/usr/local && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig
+
+# Copy MEGA-xTEA source
+WORKDIR /opt/mega-xtea
+COPY cpp/ cpp/
+COPY Makefile .
+
+# Patch Makefile to use system htslib instead of external/htslib
+RUN sed -i 's|LHTS = $(CURDIR)/external/htslib|LHTS = /usr/local|' Makefile && \
+    sed -i 's|-I $(LHTS)|-I /usr/local/include|g' Makefile && \
+    sed -i 's|-L $(LHTS)|-L /usr/local/lib|g' Makefile && \
+    sed -i 's|-Wl,-rpath=$(LHTS)||g' Makefile
+
+# Compile C++ modules
+RUN make -j$(nproc)
+
+# Verify .so files
+RUN ls -la cpp/*.so
+
+# ---------- Stage 2: Runtime ----------
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+# Runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-dev \
+    samtools \
+    bedtools \
+    ncbi-blast+ \
+    zlib1g \
+    libbz2-1.0 \
+    liblzma5 \
+    libcurl4 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install htslib runtime library
+COPY --from=builder /usr/local/lib/libhts* /usr/local/lib/
+COPY --from=builder /usr/local/include/htslib /usr/local/include/htslib
+RUN ldconfig
+
+# Install Python dependencies
+COPY requirements.txt /tmp/requirements.txt
+RUN pip3 install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
+
+# Copy MEGA-xTEA
+WORKDIR /opt/mega-xtea
+COPY --from=builder /opt/mega-xtea/cpp/*.so cpp/
+COPY mega-xtea.py .
+COPY megaxtea/ megaxtea/
+COPY scripts/ scripts/
+COPY docs/ docs/
+
+# Make entry point executable
+RUN chmod +x mega-xtea.py && \
+    ln -s /opt/mega-xtea/mega-xtea.py /usr/local/bin/mega-xtea
+
+# Default data mount points
+RUN mkdir -p /data/input /data/output /data/reference /data/kmer
+
+# Verify installation
+RUN python3 mega-xtea.py --version
+
+ENTRYPOINT ["python3", "/opt/mega-xtea/mega-xtea.py"]
+CMD ["--help"]
