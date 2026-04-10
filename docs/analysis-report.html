@@ -1,0 +1,1100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MEGAnE vs xTea — 深度代码级对比分析</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/phosphor-icons"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: {
+        serif: ['Noto Serif SC', 'serif'],
+        mono: ['JetBrains Mono', 'monospace'],
+        sans: ['Inter', 'sans-serif'],
+      },
+      colors: {
+        navy: { 50:'#eef2ff',100:'#dce4ff',200:'#b9c9ff',300:'#8ba6ff',400:'#5b7dff',500:'#3b5bdb',600:'#2b44b0',700:'#1e3185',800:'#14225a',900:'#0b1530',950:'#060b1a' },
+        accent: { cyan:'#22d3ee',amber:'#f59e0b',rose:'#f43f5e',emerald:'#10b981',violet:'#8b5cf6' },
+      }
+    }
+  }
+}
+</script>
+<style>
+  ::-webkit-scrollbar{width:6px}
+  ::-webkit-scrollbar-track{background:#0b1530}
+  ::-webkit-scrollbar-thumb{background:#3b5bdb;border-radius:3px}
+  body{font-family:'Inter',sans-serif;background:#060b1a}
+  .font-serif{font-family:'Noto Serif SC',serif}
+  .font-mono{font-family:'JetBrains Mono',monospace}
+  .hero-gradient{background:linear-gradient(180deg,#0b1530 0%,#14225a 40%,#1e3185 70%,#060b1a 100%)}
+  .section-fade{opacity:0;transform:translateY(40px)}
+  .glass{background:rgba(14,34,90,0.35);backdrop-filter:blur(16px);border:1px solid rgba(59,91,219,0.18)}
+  .glass-dark{background:rgba(6,11,26,0.7);backdrop-filter:blur(12px);border:1px solid rgba(59,91,219,0.12)}
+  .code-block{background:#0b1530;border:1px solid rgba(59,91,219,0.2);border-radius:8px;padding:16px 20px;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7;overflow-x:auto;color:#8ba6ff}
+  .code-block .comment{color:#4a6a9a}
+  .code-block .keyword{color:#22d3ee}
+  .code-block .string{color:#10b981}
+  .code-block .number{color:#f59e0b}
+  .tag-megane{background:rgba(34,211,238,0.12);color:#22d3ee;border:1px solid rgba(34,211,238,0.25);padding:2px 10px;border-radius:4px;font-size:12px;font-weight:600}
+  .tag-xtea{background:rgba(139,92,246,0.12);color:#8b5cf6;border:1px solid rgba(139,92,246,0.25);padding:2px 10px;border-radius:4px;font-size:12px;font-weight:600}
+  .progress-bar{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,#22d3ee,#3b5bdb,#8b5cf6);z-index:9999;transition:width 0.1s}
+  .dna-line{position:absolute;width:1px;height:100%;opacity:0.04;background:linear-gradient(180deg,transparent,#3b5bdb,transparent)}
+  table{border-collapse:separate;border-spacing:0}
+  table thead th{background:rgba(14,34,90,0.6);font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:0.08em;padding:12px 16px;border-bottom:2px solid rgba(59,91,219,0.3)}
+  table tbody td{padding:10px 16px;border-bottom:1px solid rgba(59,91,219,0.08);font-size:13.5px;line-height:1.5}
+  table tbody tr:hover td{background:rgba(59,91,219,0.06)}
+  .chart-container{width:100%;border-radius:12px;overflow:hidden;border:1px solid rgba(59,91,219,0.15);background:rgba(6,11,26,0.5)}
+  .section-num{font-family:'JetBrains Mono',monospace;font-size:72px;font-weight:700;color:rgba(59,91,219,0.08);position:absolute;top:-20px;right:20px;line-height:1}
+  @media(max-width:768px){.section-num{font-size:48px}}
+  .insight-card{position:relative;padding-left:20px;border-left:3px solid #3b5bdb}
+  .file-ref{color:#5b7dff;font-family:'JetBrains Mono',monospace;font-size:12px;background:rgba(59,91,219,0.08);padding:1px 6px;border-radius:3px}
+  .metric-big{font-family:'JetBrains Mono',monospace;font-size:42px;font-weight:700;line-height:1}
+  @media(max-width:768px){.metric-big{font-size:28px}}
+  .noise-overlay{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9998;opacity:0.015;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+</style>
+</head>
+<body class="bg-slate-950 text-slate-200 antialiased">
+<div class="noise-overlay"></div>
+<div class="progress-bar" id="progressBar" style="width:0%"></div>
+
+<!-- ====== HERO ====== -->
+<header class="hero-gradient relative min-h-screen flex items-center justify-center overflow-hidden">
+  <div class="dna-line" style="left:10%"></div><div class="dna-line" style="left:25%"></div>
+  <div class="dna-line" style="left:50%"></div><div class="dna-line" style="left:75%"></div><div class="dna-line" style="left:90%"></div>
+  <div class="relative z-10 max-w-5xl mx-auto px-6 text-center">
+    <div class="flex items-center justify-center gap-4 mb-8 opacity-60">
+      <span class="tag-megane">MEGAnE</span>
+      <span class="text-slate-500 font-mono text-sm">vs</span>
+      <span class="tag-xtea">xTea</span>
+    </div>
+    <h1 class="font-serif text-4xl md:text-6xl lg:text-7xl font-900 leading-tight mb-6" style="background:linear-gradient(135deg,#dce4ff 0%,#8ba6ff 50%,#22d3ee 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent">
+      深度代码级对比分析
+    </h1>
+    <p class="font-serif text-lg md:text-xl text-slate-400 max-w-3xl mx-auto mb-4 leading-relaxed">
+      转座子检测工具融合开发前期调研
+    </p>
+    <p class="text-sm text-slate-500 font-mono mb-12">Mobile Element Genotyping &amp; Analysis — Pre-development Research Report</p>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-2xl mx-auto">
+      <div class="glass rounded-lg p-4 text-center"><div class="metric-big text-cyan-400">8</div><div class="text-xs text-slate-400 mt-1">分析维度</div></div>
+      <div class="glass rounded-lg p-4 text-center"><div class="metric-big text-violet-400">2</div><div class="text-xs text-slate-400 mt-1">工具对比</div></div>
+      <div class="glass rounded-lg p-4 text-center"><div class="metric-big text-amber-400">40k+</div><div class="text-xs text-slate-400 mt-1">代码行分析</div></div>
+      <div class="glass rounded-lg p-4 text-center"><div class="metric-big text-emerald-400">5</div><div class="text-xs text-slate-400 mt-1">融合阶段</div></div>
+    </div>
+    <div class="mt-16 animate-bounce text-slate-500">
+      <svg class="w-6 h-6 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>
+    </div>
+  </div>
+</header>
+<!-- ====== SECTION 1: OVERVIEW ====== -->
+<section class="relative py-24 px-6" id="sec1">
+  <div class="section-num">01</div>
+  <div class="max-w-6xl mx-auto section-fade">
+    <div class="flex items-center gap-3 mb-2"><span class="font-mono text-xs text-cyan-400 tracking-widest">SECTION 01</span></div>
+    <h2 class="font-serif text-3xl md:text-4xl font-700 mb-3 text-white">工具概览</h2>
+    <p class="text-slate-400 mb-12 max-w-2xl">两款主流转座子（TE）检测工具的核心定位与设计哲学对比</p>
+
+    <div class="grid md:grid-cols-2 gap-6 mb-12">
+      <!-- MEGAnE Card -->
+      <div class="glass rounded-xl p-6 md:p-8 relative overflow-hidden">
+        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-400 to-blue-500"></div>
+        <div class="flex items-center gap-3 mb-4">
+          <span class="tag-megane">MEGAnE</span>
+          <span class="text-xs text-slate-500 font-mono">shohei-kojima/MEGAnE</span>
+        </div>
+        <p class="text-sm text-slate-300 mb-4 font-serif">Mobile Element Genotyping and Analysis Environment</p>
+        <table class="w-full text-sm">
+          <tbody>
+            <tr><td class="text-slate-500 pr-4 py-1.5 whitespace-nowrap">核心语言</td><td class="text-slate-200 py-1.5"><span class="text-cyan-300">Python + C++</span> (性能关键模块)</td></tr>
+            <tr><td class="text-slate-500 pr-4 py-1.5 whitespace-nowrap">检测对象</td><td class="text-slate-200 py-1.5">LINE1, Alu, SVA, HERV 插入 + <span class="text-amber-400 font-semibold">缺失(Deletion)</span></td></tr>
+            <tr><td class="text-slate-500 pr-4 py-1.5 whitespace-nowrap">核心方法</td><td class="text-slate-200 py-1.5">K-mer过滤 + Split-read + Discordant pair</td></tr>
+            <tr><td class="text-slate-500 pr-4 py-1.5 whitespace-nowrap">设计定位</td><td class="text-slate-200 py-1.5">高速、大规模队列分析（>10,000样本）</td></tr>
+            <tr><td class="text-slate-500 pr-4 py-1.5 whitespace-nowrap">运行时间</td><td class="text-slate-200 py-1.5 font-mono"><span class="text-emerald-400">~1h</span> / 30x WGS / 4线程</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <!-- xTea Card -->
+      <div class="glass rounded-xl p-6 md:p-8 relative overflow-hidden">
+        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-violet-400 to-fuchsia-500"></div>
+        <div class="flex items-center gap-3 mb-4">
+          <span class="tag-xtea">xTea</span>
+          <span class="text-xs text-slate-500 font-mono">parklab/xTea</span>
+        </div>
+        <p class="text-sm text-slate-300 mb-4 font-serif">x Transposable Element Analyzer</p>
+        <table class="w-full text-sm">
+          <tbody>
+            <tr><td class="text-slate-500 pr-4 py-1.5 whitespace-nowrap">核心语言</td><td class="text-slate-200 py-1.5"><span class="text-violet-300">纯 Python</span></td></tr>
+            <tr><td class="text-slate-500 pr-4 py-1.5 whitespace-nowrap">检测对象</td><td class="text-slate-200 py-1.5">LINE1, Alu, <span class="text-amber-400 font-semibold">SVA</span>, HERV-K, MT插入, 假基因</td></tr>
+            <tr><td class="text-slate-500 pr-4 py-1.5 whitespace-nowrap">核心方法</td><td class="text-slate-200 py-1.5">Split-read + Discordant pair + Local assembly + ML基因分型</td></tr>
+            <tr><td class="text-slate-500 pr-4 py-1.5 whitespace-nowrap">设计定位</td><td class="text-slate-200 py-1.5">高精度、多平台（Illumina/10X/PacBio/Nanopore）</td></tr>
+            <tr><td class="text-slate-500 pr-4 py-1.5 whitespace-nowrap">运行时间</td><td class="text-slate-200 py-1.5 font-mono"><span class="text-rose-400">8-12h</span> / 30x WGS / 8核</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Capability Radar -->
+    <div class="chart-container p-4">
+      <div id="chartRadar" style="width:100%;height:420px"></div>
+    </div>
+  </div>
+</section>
+<!-- ====== SECTION 2: ARCHITECTURE ====== -->
+<section class="relative py-24 px-6" id="sec2">
+  <div class="section-num">02</div>
+  <div class="max-w-6xl mx-auto section-fade">
+    <div class="flex items-center gap-3 mb-2"><span class="font-mono text-xs text-cyan-400 tracking-widest">SECTION 02</span></div>
+    <h2 class="font-serif text-3xl md:text-4xl font-700 mb-3 text-white">流程架构对比</h2>
+    <p class="text-slate-400 mb-12 max-w-2xl">从BAM输入到VCF输出的完整数据流对比</p>
+
+    <div class="grid md:grid-cols-2 gap-8 mb-12">
+      <!-- MEGAnE Pipeline -->
+      <div>
+        <div class="flex items-center gap-2 mb-6"><span class="tag-megane">MEGAnE</span><span class="text-slate-500 text-sm">— 四阶段流水线</span></div>
+        <div class="space-y-3">
+          <div class="glass-dark rounded-lg p-4 relative pl-16">
+            <div class="absolute left-4 top-4 w-8 h-8 rounded bg-cyan-400/10 flex items-center justify-center font-mono text-cyan-400 text-xs font-bold">S0</div>
+            <div class="text-sm font-semibold text-white mb-1">K-mer 集合构建</div>
+            <div class="text-xs text-slate-400">预计算32-mer冗余k-mer集合，输出压缩2-bit二进制文件(.mk)</div>
+            <div class="mt-1"><span class="file-ref">cpp/save_redundant_kmers.cpp</span></div>
+          </div>
+          <div class="flex justify-center"><div class="w-px h-4 bg-cyan-400/20"></div></div>
+          <div class="glass-dark rounded-lg p-4 relative pl-16">
+            <div class="absolute left-4 top-4 w-8 h-8 rounded bg-cyan-400/10 flex items-center justify-center font-mono text-cyan-400 text-xs font-bold">S1</div>
+            <div class="text-sm font-semibold text-white mb-1">个体变异检测与基因分型</div>
+            <div class="text-xs text-slate-400 space-y-1">
+              <div>C++ 多线程提取不一致读段 <span class="file-ref">cpp/extract_discordant.cpp</span></div>
+              <div>K-mer 过滤未比对读段 <span class="file-ref">cpp/extract_unmapped.cpp</span></div>
+              <div>BLAST 比对到重复序列共识序列</div>
+              <div>缺失 TE 搜索 <span class="file-ref">scripts/find_absent.py</span></div>
+              <div>候选位点过滤 + 高斯拟合基因分型</div>
+            </div>
+          </div>
+          <div class="flex justify-center"><div class="w-px h-4 bg-cyan-400/20"></div></div>
+          <div class="glass-dark rounded-lg p-4 relative pl-16">
+            <div class="absolute left-4 top-4 w-8 h-8 rounded bg-cyan-400/10 flex items-center justify-center font-mono text-cyan-400 text-xs font-bold">S2</div>
+            <div class="text-sm font-semibold text-white mb-1">联合分析 (Joint Calling)</div>
+            <div class="text-xs text-slate-400">合并多个个体VCF，支持分块处理 >10,000 样本</div>
+            <div class="mt-1"><span class="file-ref">2_joint_calling.py</span></div>
+          </div>
+          <div class="flex justify-center"><div class="w-px h-4 bg-cyan-400/20"></div></div>
+          <div class="glass-dark rounded-lg p-4 relative pl-16">
+            <div class="absolute left-4 top-4 w-8 h-8 rounded bg-cyan-400/10 flex items-center justify-center font-mono text-cyan-400 text-xs font-bold">S3</div>
+            <div class="text-sm font-semibold text-white mb-1">VCF 格式整理</div>
+            <div class="text-xs text-slate-400">解析多等位变异，为 phasing/imputation 准备</div>
+            <div class="mt-1"><span class="file-ref">3_reshape_vcf_for_imputation.py</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- xTea Pipeline -->
+      <div>
+        <div class="flex items-center gap-2 mb-6"><span class="tag-xtea">xTea</span><span class="text-slate-500 text-sm">— 五步分析流程</span></div>
+        <div class="space-y-3">
+          <div class="glass-dark rounded-lg p-4 relative pl-16">
+            <div class="absolute left-4 top-4 w-8 h-8 rounded bg-violet-400/10 flex items-center justify-center font-mono text-violet-400 text-xs font-bold">01</div>
+            <div class="text-sm font-semibold text-white mb-1">CLIP — 剪切读段提取</div>
+            <div class="text-xs text-slate-400">提取所有软剪切位点，SVA模式下启用 --sva 专用参数</div>
+            <div class="mt-1"><span class="file-ref">xtea/clip_read.py</span> <span class="text-slate-600">1,289行</span></div>
+          </div>
+          <div class="flex justify-center"><div class="w-px h-4 bg-violet-400/20"></div></div>
+          <div class="glass-dark rounded-lg p-4 relative pl-16">
+            <div class="absolute left-4 top-4 w-8 h-8 rounded bg-violet-400/10 flex items-center justify-center font-mono text-violet-400 text-xs font-bold">02</div>
+            <div class="text-sm font-semibold text-white mb-1">DISC — 不一致配对过滤</div>
+            <div class="text-xs text-slate-400">异常插入片段 (>2000bp) 或方向异常的读段对聚类</div>
+            <div class="mt-1"><span class="file-ref">xtea/disc_cluster.py</span></div>
+          </div>
+          <div class="flex justify-center"><div class="w-px h-4 bg-violet-400/20"></div></div>
+          <div class="glass-dark rounded-lg p-4 relative pl-16">
+            <div class="absolute left-4 top-4 w-8 h-8 rounded bg-violet-400/10 flex items-center justify-center font-mono text-violet-400 text-xs font-bold">03</div>
+            <div class="text-sm font-semibold text-white mb-1">Local Assembly — 局部组装</div>
+            <div class="text-xs text-slate-400">使用 IDBA_UD 对每个候选位点进行 de novo 组装</div>
+            <div class="mt-1"><span class="file-ref">xtea/x_local_assembly.py</span></div>
+          </div>
+          <div class="flex justify-center"><div class="w-px h-4 bg-violet-400/20"></div></div>
+          <div class="glass-dark rounded-lg p-4 relative pl-16">
+            <div class="absolute left-4 top-4 w-8 h-8 rounded bg-violet-400/10 flex items-center justify-center font-mono text-violet-400 text-xs font-bold">04</div>
+            <div class="text-sm font-semibold text-white mb-1">Consensus Alignment — 共识比对过滤</div>
+            <div class="text-xs text-slate-400">将候选读段重比对至 TE 共识序列，验证 TE 来源</div>
+            <div class="mt-1"><span class="file-ref">xtea/x_clip_disc_filter.py</span></div>
+          </div>
+          <div class="flex justify-center"><div class="w-px h-4 bg-violet-400/20"></div></div>
+          <div class="glass-dark rounded-lg p-4 relative pl-16">
+            <div class="absolute left-4 top-4 w-8 h-8 rounded bg-violet-400/10 flex items-center justify-center font-mono text-violet-400 text-xs font-bold">05</div>
+            <div class="text-sm font-semibold text-white mb-1">Post-filtering + ML Genotyping</div>
+            <div class="text-xs text-slate-400">TE 类型专用后处理 + Deep Forest / Random Forest 基因分型</div>
+            <div class="mt-1"><span class="file-ref">xtea/x_post_filter.py</span> + <span class="file-ref">xtea/x_genotype_classify.py</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Code Volume Chart -->
+    <div class="chart-container p-4 mt-8">
+      <div id="chartCodeVolume" style="width:100%;height:380px"></div>
+    </div>
+  </div>
+</section>
+<!-- ====== SECTION 3: SPEED ====== -->
+<section class="relative py-24 px-6" id="sec3">
+  <div class="section-num">03</div>
+  <div class="max-w-6xl mx-auto section-fade">
+    <div class="flex items-center gap-3 mb-2"><span class="font-mono text-xs text-emerald-400 tracking-widest">SECTION 03 — 核心发现</span></div>
+    <h2 class="font-serif text-3xl md:text-4xl font-700 mb-3 text-white">MEGAnE 速度优势的代码根源</h2>
+    <p class="text-slate-400 mb-12 max-w-2xl">MEGAnE 处理 30x WGS 约 1 小时，xTea 需 8-12 小时。速度差异来源于四个层面。</p>
+
+    <!-- Runtime Comparison Chart -->
+    <div class="chart-container p-4 mb-12">
+      <div id="chartRuntime" style="width:100%;height:340px"></div>
+    </div>
+
+    <!-- Speed Factor 1: C++ -->
+    <div class="glass rounded-xl p-6 md:p-8 mb-6">
+      <div class="flex items-center gap-3 mb-4">
+        <span class="w-8 h-8 rounded bg-cyan-400/10 flex items-center justify-center font-mono text-cyan-400 text-xs font-bold">3.1</span>
+        <h3 class="text-lg font-semibold text-white">C++ 加速模块</h3>
+      </div>
+      <p class="text-sm text-slate-300 mb-4">MEGAnE 将 BAM 处理的核心逻辑编译为 C++ 本地代码，使用 <code class="text-cyan-300 font-mono text-xs">g++ -pthread -O2 -lhts</code> 编译优化。</p>
+      <div class="grid md:grid-cols-2 gap-4 mb-4">
+        <div class="glass-dark rounded-lg p-4">
+          <div class="text-sm font-semibold text-cyan-300 mb-2">extract_discordant.cpp <span class="text-slate-500 font-normal">~1,250行</span></div>
+          <ul class="text-xs text-slate-400 space-y-1.5">
+            <li>htslib 线程池 + mutex 保护的 I/O 缓冲池</li>
+            <li>每线程分配 <span class="text-amber-400 font-mono">1 GB</span> I/O 缓冲区</li>
+            <li>一次扫描同时提取: 嵌合读段 + 不一致配对 + 缺失断点</li>
+            <li>SA/XA tag 直接解析嵌合比对，无需重比对</li>
+          </ul>
+          <div class="mt-2"><span class="file-ref">MEGAnE/cpp/extract_discordant.cpp:80-196</span></div>
+        </div>
+        <div class="glass-dark rounded-lg p-4">
+          <div class="text-sm font-semibold text-cyan-300 mb-2">extract_unmapped.cpp <span class="text-slate-500 font-normal">~300行</span></div>
+          <ul class="text-xs text-slate-400 space-y-1.5">
+            <li>DNA → 2-bit 编码（64位表示一个32-mer）</li>
+            <li>K-mer 过滤替代完整序列比对</li>
+            <li>排序 k-mer 向量 + 二分查找 = <span class="text-emerald-400 font-mono">O(log N)</span></li>
+            <li>仅输出含重复序列 k-mer 的未比对读段</li>
+          </ul>
+          <div class="mt-2"><span class="file-ref">MEGAnE/cpp/extract_unmapped.cpp:52-106</span></div>
+        </div>
+      </div>
+      <div class="insight-card text-xs text-slate-300 mt-4">
+        <strong class="text-white">关键洞察:</strong> xTea 全部使用 Python 处理 BAM，通过 pysam 包装 htslib 调用，存在 Python-C 接口开销。MEGAnE 直接操作 htslib C API，消除中间层。
+      </div>
+    </div>
+
+    <!-- Speed Factor 2: K-mer vs Alignment -->
+    <div class="glass rounded-xl p-6 md:p-8 mb-6">
+      <div class="flex items-center gap-3 mb-4">
+        <span class="w-8 h-8 rounded bg-cyan-400/10 flex items-center justify-center font-mono text-cyan-400 text-xs font-bold">3.2</span>
+        <h3 class="text-lg font-semibold text-white">K-mer 策略 vs 重比对策略</h3>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm rounded-lg overflow-hidden">
+          <thead><tr>
+            <th class="text-left text-slate-300">维度</th>
+            <th class="text-left text-cyan-300">MEGAnE</th>
+            <th class="text-left text-violet-300">xTea</th>
+          </tr></thead>
+          <tbody>
+            <tr><td class="text-slate-400">候选筛选</td><td>11-nt k-mer 索引重复序列 → 快速过滤</td><td>每候选位点调用 BWA MEM 重比对</td></tr>
+            <tr><td class="text-slate-400">BWA 调用次数</td><td class="text-emerald-400 font-mono">0 次</td><td class="text-rose-400 font-mono">3-4 次/位点</td></tr>
+            <tr><td class="text-slate-400">BWA 种子频率</td><td>N/A</td><td class="font-mono">BWA_SEED_FREQ=10 (默认500)</td></tr>
+            <tr><td class="text-slate-400">序列验证方式</td><td>仅对候选读段 BLAST（批量处理）</td><td>BWA MEM 逐位点重比对 + 局部组装</td></tr>
+            <tr><td class="text-slate-400">内存占用</td><td class="font-mono">~1.8 GB（k-mer集）</td><td>按位点动态加载</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="mt-4 text-xs text-slate-500">
+        <span class="file-ref">xTea: xtea/bwa_align.py:20-245</span> — realign_clipped_reads(), realign_disc_reads(), two_stage_realign()
+      </div>
+    </div>
+
+    <!-- Speed Factor 3: Parallelization -->
+    <div class="glass rounded-xl p-6 md:p-8 mb-6">
+      <div class="flex items-center gap-3 mb-4">
+        <span class="w-8 h-8 rounded bg-cyan-400/10 flex items-center justify-center font-mono text-cyan-400 text-xs font-bold">3.3</span>
+        <h3 class="text-lg font-semibold text-white">并行化设计差异</h3>
+      </div>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="glass-dark rounded-lg p-4">
+          <div class="text-sm font-semibold text-cyan-300 mb-2">MEGAnE — 双层并行</div>
+          <ul class="text-xs text-slate-400 space-y-1">
+            <li><span class="text-cyan-400">C++ 层:</span> 线程池处理 BAM + mutex I/O</li>
+            <li><span class="text-cyan-400">Python 层:</span> multiprocessing.Pool 并行 BLAST</li>
+            <li><span class="text-cyan-400">Joint Calling:</span> 分块处理，每块独立并行</li>
+          </ul>
+        </div>
+        <div class="glass-dark rounded-lg p-4">
+          <div class="text-sm font-semibold text-violet-300 mb-2">xTea — 单层并行</div>
+          <ul class="text-xs text-slate-400 space-y-1">
+            <li><span class="text-violet-400">Python 层:</span> multiprocessing.Pool（仅模块内）</li>
+            <li><span class="text-rose-400">瓶颈:</span> 逐染色体顺序处理</li>
+            <li><span class="text-rose-400">瓶颈:</span> 逐候选位点局部组装（IDBA_UD）</li>
+            <li><span class="text-rose-400">瓶颈:</span> 大量临时文件 I/O</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Speed Factor 4: xTea Bottlenecks -->
+    <div class="glass rounded-xl p-6 md:p-8">
+      <div class="flex items-center gap-3 mb-4">
+        <span class="w-8 h-8 rounded bg-cyan-400/10 flex items-center justify-center font-mono text-cyan-400 text-xs font-bold">3.4</span>
+        <h3 class="text-lg font-semibold text-white">xTea 速度瓶颈代码定位</h3>
+      </div>
+      <div class="code-block text-xs mb-4">
+<span class="comment"># xTea/xtea/bwa_align.py — 三轮 BWA 重比对</span><br>
+<span class="keyword">def</span> realign_clipped_reads(sf_clip, sf_ref):   <span class="comment"># 第1轮: clip读段</span><br>
+<span class="keyword">def</span> realign_disc_reads(sf_disc, sf_ref):      <span class="comment"># 第2轮: discordant读段</span><br>
+<span class="keyword">def</span> two_stage_realign(sf_cns, sf_flank):      <span class="comment"># 第3轮: 共识序列+侧翼</span><br>
+<br>
+<span class="comment"># xTea/xtea/x_local_assembly.py:111 — 逐位点组装</span><br>
+cmd = <span class="string">"{0} -r {1} -o {2}"</span>.format(IDBA_UD, sf_reads, working_folder)<br>
+<br>
+<span class="comment"># xTea/xtea/x_TEI_locator.py:121-167 — 逐染色体循环</span><br>
+<span class="keyword">for</span> chrm <span class="keyword">in</span> chromosomes:  <span class="comment"># 顺序处理，非并行</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">for</span> sf_bam <span class="keyword">in</span> bam_list:  <span class="comment"># 逐BAM文件</span>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- ====== SECTION 4: DELETION ====== -->
+<section class="relative py-24 px-6" id="sec4">
+  <div class="section-num">04</div>
+  <div class="max-w-6xl mx-auto section-fade">
+    <div class="flex items-center gap-3 mb-2"><span class="font-mono text-xs text-amber-400 tracking-widest">SECTION 04 — 核心发现</span></div>
+    <h2 class="font-serif text-3xl md:text-4xl font-700 mb-3 text-white">MEGAnE Deletion 检测的代码实现</h2>
+    <p class="text-slate-400 mb-12 max-w-2xl">MEGAnE 独有的"Absent ME"策略：检测参考基因组中转座子的缺失变异</p>
+
+    <!-- Algorithm Overview -->
+    <div class="glass rounded-xl p-6 md:p-8 mb-6">
+      <h3 class="text-lg font-semibold text-white mb-4">4.1 算法原理 — Absent ME Detection</h3>
+      <div class="grid md:grid-cols-2 gap-6">
+        <div>
+          <div class="text-sm font-semibold text-cyan-300 mb-3">C++ 检测层</div>
+          <div class="code-block text-xs">
+<span class="comment">// extract_discordant.cpp:750-806</span><br>
+<span class="comment">// output_abs() — 匹配软剪切读段对</span><br>
+<br>
+<span class="keyword">if</span> (umr[_chr]-&gt;R_num &gt; <span class="number">0</span><br>
+&nbsp;&nbsp;&amp;&amp; uml[_chr]-&gt;L_num &gt; <span class="number">0</span>) {<br>
+&nbsp;&nbsp;<span class="keyword">for</span> (softclip_info* p1 : umr[_chr]-&gt;R) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">for</span> (softclip_info* p2 : uml[_chr]-&gt;L) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;leng = p2-&gt;pos - (p1-&gt;pos + p1-&gt;rlen);<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">if</span> (leng &gt;= <span class="number">50</span>  <span class="comment">// ABS_MIN_DIST</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; &amp;&amp; leng &lt;= <span class="number">20000</span>) { <span class="comment">// ABS_MAX_DIST</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// 输出为候选缺失</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}<br>
+&nbsp;&nbsp;&nbsp;&nbsp;}<br>
+&nbsp;&nbsp;}<br>
+}
+          </div>
+          <div class="mt-2"><span class="file-ref">MEGAnE/cpp/extract_discordant.cpp:786-806</span></div>
+        </div>
+        <div>
+          <div class="text-sm font-semibold text-cyan-300 mb-3">检测逻辑示意</div>
+          <div class="glass-dark rounded-lg p-4 text-xs text-slate-300 space-y-3">
+            <div class="font-mono text-center text-slate-500 mb-2">参考基因组</div>
+            <div class="font-mono text-center bg-slate-800 rounded p-2">
+              <span class="text-slate-400">────</span><span class="text-cyan-400">[R断点 p1]</span><span class="text-amber-400">══TE══</span><span class="text-cyan-400">[L断点 p2]</span><span class="text-slate-400">────</span>
+            </div>
+            <div class="space-y-2 mt-3">
+              <div><span class="text-cyan-400 font-semibold">条件1:</span> p1(右断点R) + p2(左断点L) 在同一染色体</div>
+              <div><span class="text-cyan-400 font-semibold">条件2:</span> 同链方向</div>
+              <div><span class="text-cyan-400 font-semibold">条件3:</span> 距离 50bp ≤ |p2-p1| ≤ 20,000bp</div>
+              <div><span class="text-cyan-400 font-semibold">条件4:</span> 区间内 TE 覆盖 ≥ 90%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Python Post-processing -->
+    <div class="glass rounded-xl p-6 md:p-8 mb-6">
+      <h3 class="text-lg font-semibold text-white mb-4">4.2 Python 后处理层</h3>
+      <div class="text-sm text-slate-300 mb-4"><span class="file-ref">MEGAnE/scripts/find_absent.py:20-150</span></div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm rounded-lg overflow-hidden">
+          <thead><tr>
+            <th class="text-left text-slate-300">处理步骤</th>
+            <th class="text-left text-slate-300">参数</th>
+            <th class="text-left text-slate-300">阈值</th>
+          </tr></thead>
+          <tbody>
+            <tr><td class="text-slate-300">热点鉴定</td><td class="text-slate-400">按断点位置聚类嵌合读段</td><td class="font-mono text-amber-400">—</td></tr>
+            <tr><td class="text-slate-300">TE 交叉验证</td><td class="text-slate-400">bedtools 查找重叠的参考 TE</td><td class="font-mono text-amber-400">—</td></tr>
+            <tr><td class="text-slate-300">TE 覆盖比</td><td class="text-slate-400">abs_len_to_te_ratio</td><td class="font-mono text-amber-400">≥ 0.9 (90%)</td></tr>
+            <tr><td class="text-slate-300">非ME序列比</td><td class="text-slate-400">non_ME_len_ratio</td><td class="font-mono text-amber-400">≤ 0.5 (50%)</td></tr>
+            <tr><td class="text-slate-300">断点注释间隙</td><td class="text-slate-400">breakpoint_annotation_gap</td><td class="font-mono text-amber-400">≤ 25 bp</td></tr>
+            <tr><td class="text-slate-300">最小嵌合读段</td><td class="text-slate-400">abs_min_chimeric_num_coeff × coverage</td><td class="font-mono text-amber-400">0.03</td></tr>
+            <tr><td class="text-slate-300">3' 转导检测</td><td class="text-slate-400">检查下游 polyA 尾</td><td class="font-mono text-amber-400">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="text-xs text-slate-500 mt-3">输出: <span class="font-mono">absent_MEs.bed</span> (高置信缺失) + <span class="font-mono">absent_MEs_transduction.bed</span> (含3'转导)</div>
+    </div>
+
+    <!-- xTea Deletion Status -->
+    <div class="glass rounded-xl p-6 md:p-8 border-rose-500/20">
+      <h3 class="text-lg font-semibold text-white mb-4">4.3 xTea 的缺失检测现状</h3>
+      <div class="code-block text-xs mb-4">
+<span class="comment"># xTea/xtea/x_ref_TE_deletion.py — 完全未实现</span><br>
+<span class="keyword">class</span> xTERefDel():<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">def</span> __init__(self):<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">return</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">def</span> call_TE_deletion(self, sf_ref, sf_rmsk, sf_bam, sf_rslt):<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">return</span>  <span class="comment"># 空函数 (stub)</span>
+      </div>
+      <div class="insight-card text-sm text-slate-300">
+        <strong class="text-rose-400">结论:</strong> xTea 的 <code class="font-mono text-xs">xTERefDel</code> 类仅包含空函数，deletion 检测完全未实现。这是 MEGAnE 的独特且重要的能力，是融合开发中<strong class="text-white">必须保留</strong>的模块。
+      </div>
+    </div>
+  </div>
+</section>
+<!-- ====== SECTION 5: SVA ====== -->
+<section class="relative py-24 px-6" id="sec5" style="background:linear-gradient(180deg,transparent 0%,rgba(139,92,246,0.03) 50%,transparent 100%)">
+  <div class="section-num">05</div>
+  <div class="max-w-6xl mx-auto section-fade">
+    <div class="flex items-center gap-3 mb-2"><span class="font-mono text-xs text-violet-400 tracking-widest">SECTION 05 — 最关键发现</span></div>
+    <h2 class="font-serif text-3xl md:text-4xl font-700 mb-3 text-white">SVA 检测表现差异的代码根源</h2>
+    <p class="text-slate-400 mb-4 max-w-3xl">SVA (SINE-VNTR-Alu) 是最具挑战性的 TE 类型：其内部 VNTR 区域导致拷贝长度高度可变，传统通用过滤策略极易产生假阴性。</p>
+    <div class="insight-card text-sm text-slate-300 mb-12">
+      <strong class="text-violet-400">核心结论:</strong> xTea 之所以在 SVA 检测上表现更好，根本原因是它实现了一套 <strong class="text-white">VNTR-aware 的专用检测框架</strong>，而 MEGAnE 将 SVA 作为通用 SINE 处理，缺乏对 SVA 三段式结构的感知。
+    </div>
+
+    <!-- 5.1 VNTR -->
+    <div class="glass rounded-xl p-6 md:p-8 mb-6">
+      <h3 class="text-lg font-semibold text-white mb-4">5.1 VNTR 区域处理 — 关键差异</h3>
+      <p class="text-sm text-slate-300 mb-4">SVA 的 VNTR（可变数目串联重复）区域会导致不同个体间的拷贝长度自然变异，这会破坏基于一致性的过滤逻辑。</p>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="glass-dark rounded-lg p-4 border-t-2 border-violet-400/40">
+          <div class="text-sm font-semibold text-violet-300 mb-2">xTea — VNTR 感知</div>
+          <div class="code-block text-xs">
+<span class="comment"># x_clip_disc_filter.py:1352-1353</span><br>
+<span class="comment"># 当两侧一致性检查都失败时:</span><br>
+<span class="keyword">if</span> bl_consist == <span class="number">False</span> \<br>
+&nbsp;&nbsp;&nbsp;<span class="keyword">and</span> br_consist == <span class="number">False</span> \<br>
+&nbsp;&nbsp;&nbsp;<span class="keyword">and</span> global_values.IS_CALL_SVA == <span class="number">False</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">continue</span>  <span class="comment"># 仅非SVA时跳过</span><br>
+<span class="comment"># SVA 模式: 允许通过！</span>
+          </div>
+          <div class="text-xs text-slate-400 mt-2">SVA 的 VNTR 变异会导致两侧都不一致 — xTea 理解这一点并放宽检查</div>
+        </div>
+        <div class="glass-dark rounded-lg p-4 border-t-2 border-cyan-400/40">
+          <div class="text-sm font-semibold text-cyan-300 mb-2">MEGAnE — 通用处理</div>
+          <div class="code-block text-xs">
+<span class="comment"># 无 VNTR 特殊处理</span><br>
+<span class="comment"># pair_breakpoints.py:119</span><br>
+<span class="keyword">if</span> abs(L - R) &lt; <span class="number">50</span>:  <span class="comment"># 统一 TSD 距离</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;paired = <span class="number">True</span><br>
+<span class="comment"># 所有 TE 类型使用相同阈值</span><br>
+<span class="comment"># 不区分 SVA 的 VNTR 变异</span>
+          </div>
+          <div class="text-xs text-slate-400 mt-2">统一的一致性检查会将 VNTR 导致的合法变异误判为假阳性</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5.2 Annotation Extension -->
+    <div class="glass rounded-xl p-6 md:p-8 mb-6">
+      <h3 class="text-lg font-semibold text-white mb-4">5.2 SVA 专用注释扩展</h3>
+      <div class="code-block text-xs mb-4">
+<span class="comment"># xTea/xtea/x_TEI_locator.py:1095-1096</span><br>
+<span class="keyword">if</span> global_values.IS_CALL_SVA <span class="keyword">is</span> <span class="number">True</span>:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;boundary_extnd = global_values.SVA_ANNOTATION_EXTND  <span class="comment"># 200bp 扩展</span><br>
+<br>
+<span class="comment"># xTea/xtea/x_annotation.py:329-363</span><br>
+<span class="comment"># load_rmsk_annotation_with_extnd_with_lenth_cutoff()</span><br>
+<span class="comment"># RepeatMasker 的 SVA 注释已知不够准确</span><br>
+<span class="comment"># xTea 将注释边界扩展 200bp 进行补偿</span>
+      </div>
+      <div class="insight-card text-xs text-slate-300">
+        <strong class="text-white">原因:</strong> RepeatMasker 对 SVA 的注释边界准确度低于 LINE1/Alu，因为 SVA 的 VNTR 区域变异使精确边界难以确定。xTea 通过扩展 200bp 补偿这一不足。
+      </div>
+    </div>
+
+    <!-- 5.3 Structure-Aware Parameters -->
+    <div class="glass rounded-xl p-6 md:p-8 mb-6">
+      <h3 class="text-lg font-semibold text-white mb-4">5.3 SVA 结构感知参数体系</h3>
+      <p class="text-sm text-slate-300 mb-4">xTea 理解 SVA 的三段式结构: <strong class="text-violet-300">SINE-R</strong> (头部~400bp) → <strong class="text-amber-300">VNTR</strong> (中间可变) → <strong class="text-emerald-300">PolyA</strong> (尾部~1900bp处)</p>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm rounded-lg overflow-hidden">
+          <thead><tr>
+            <th class="text-left text-slate-300">参数</th>
+            <th class="text-left text-slate-300">xTea 值</th>
+            <th class="text-left text-slate-300">MEGAnE 等价</th>
+            <th class="text-left text-slate-300">含义</th>
+          </tr></thead>
+          <tbody>
+            <tr><td class="text-violet-300 font-mono text-xs">REP_SVA_MIN_LEN</td><td class="font-mono text-amber-400">300</td><td class="text-slate-500">无</td><td class="text-slate-400">最小 SVA 插入长度</td></tr>
+            <tr><td class="text-violet-300 font-mono text-xs">REP_SVA_CNS_HEAD</td><td class="font-mono text-amber-400">400</td><td class="text-slate-500">无</td><td class="text-slate-400">共识序列头部(SINE-R区域)</td></tr>
+            <tr><td class="text-violet-300 font-mono text-xs">REP_SVA_POLYA_START</td><td class="font-mono text-amber-400">1900</td><td class="text-slate-500">无 (统一70%阈值)</td><td class="text-slate-400">PolyA 尾起始位置</td></tr>
+            <tr><td class="text-violet-300 font-mono text-xs">sva_clip_cluster_diff</td><td class="font-mono text-amber-400">200</td><td class="text-slate-500">无 (统一阈值)</td><td class="text-slate-400">VNTR导致的更宽松聚类容差</td></tr>
+            <tr><td class="text-violet-300 font-mono text-xs">SVA_ANNOTATION_EXTND</td><td class="font-mono text-amber-400">200</td><td class="text-slate-500">无</td><td class="text-slate-400">注释边界扩展补偿</td></tr>
+            <tr><td class="text-violet-300 font-mono text-xs">IS_CALL_SVA</td><td class="font-mono text-amber-400">True/False</td><td class="text-slate-500">无</td><td class="text-slate-400">全局SVA模式开关</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="mt-3"><span class="file-ref">xTea: xtea/x_post_filter.py:43-60</span> + <span class="file-ref">xtea/global_values.py:103</span></div>
+    </div>
+
+    <!-- 5.4 PolyA Detection -->
+    <div class="glass rounded-xl p-6 md:p-8 mb-6">
+      <h3 class="text-lg font-semibold text-white mb-4">5.4 SVA 专用 PolyA 检测</h3>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div>
+          <div class="text-sm font-semibold text-violet-300 mb-2">xTea — 位置感知 PolyA</div>
+          <ul class="text-xs text-slate-400 space-y-1.5">
+            <li>搜索规范信号: <span class="font-mono text-emerald-400">AATAAA / TTTATT</span>, <span class="font-mono text-emerald-400">ATTAAA / TTTAAT</span></li>
+            <li>SVA 的 polyA 在共识序列 <span class="font-mono text-amber-400">~1900bp</span> 处</li>
+            <li>Alu 在 <span class="font-mono">255bp</span>，LINE1 在 <span class="font-mono">5950bp</span> — 分别处理</li>
+            <li>专用函数: <code class="font-mono text-xs text-violet-300">is_polyA_dominant_two_side_sva()</code></li>
+          </ul>
+          <div class="mt-2"><span class="file-ref">xtea/x_polyA.py:1-160</span></div>
+        </div>
+        <div>
+          <div class="text-sm font-semibold text-cyan-300 mb-2">MEGAnE — 通用 PolyA</div>
+          <ul class="text-xs text-slate-400 space-y-1.5">
+            <li>统一阈值: 剪切序列 <span class="font-mono text-amber-400">70%</span> 为 A/T 即判定</li>
+            <li>不区分不同 TE 类型的 polyA 位置</li>
+            <li>不验证规范 polyA 信号序列</li>
+            <li>对非典型 SVA polyA 不敏感</li>
+          </ul>
+          <div class="mt-2"><span class="file-ref">MEGAnE/cpp/extract_discordant.cpp:700-747</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5.5 Post-processing -->
+    <div class="glass rounded-xl p-6 md:p-8 mb-6">
+      <h3 class="text-lg font-semibold text-white mb-4">5.5 SVA 后处理过滤层级</h3>
+      <p class="text-sm text-slate-300 mb-4"><span class="file-ref">xtea/x_post_filter.py:63-123</span> — <code class="font-mono text-xs text-violet-300">post_processing_SVA()</code></p>
+      <div class="space-y-2">
+        <div class="glass-dark rounded-lg p-3 flex items-start gap-3">
+          <span class="w-6 h-6 rounded bg-violet-400/10 flex items-center justify-center font-mono text-violet-400 text-xs font-bold shrink-0 mt-0.5">1</span>
+          <div class="text-xs text-slate-300"><strong class="text-white">双侧 clip:</strong> 检查 polyA 主导性 + CNS_HEAD (SINE-R 区域) 匹配。过滤双侧都命中 polyA 或都不命中 polyA 的假阳性。</div>
+        </div>
+        <div class="glass-dark rounded-lg p-3 flex items-start gap-3">
+          <span class="w-6 h-6 rounded bg-violet-400/10 flex items-center justify-center font-mono text-violet-400 text-xs font-bold shrink-0 mt-0.5">2</span>
+          <div class="text-xs text-slate-300"><strong class="text-white">一半侧 clip:</strong> 允许 rep 区域中 VNTR 扩展导致的假阳性通过（理解这是结构性变异而非错误）。</div>
+        </div>
+        <div class="glass-dark rounded-lg p-3 flex items-start gap-3">
+          <span class="w-6 h-6 rounded bg-violet-400/10 flex items-center justify-center font-mono text-violet-400 text-xs font-bold shrink-0 mt-0.5">3</span>
+          <div class="text-xs text-slate-300"><strong class="text-white">单侧 clip:</strong> 要求 polyA 信号存在（转导事件除外）。</div>
+        </div>
+        <div class="glass-dark rounded-lg p-3 flex items-start gap-3">
+          <span class="w-6 h-6 rounded bg-violet-400/10 flex items-center justify-center font-mono text-violet-400 text-xs font-bold shrink-0 mt-0.5">4</span>
+          <div class="text-xs text-slate-300"><strong class="text-white">参考拷贝过滤:</strong> 分歧率(div_rate)低于阈值的参考拷贝重叠区域特殊处理。</div>
+        </div>
+        <div class="glass-dark rounded-lg p-3 flex items-start gap-3">
+          <span class="w-6 h-6 rounded bg-violet-400/10 flex items-center justify-center font-mono text-violet-400 text-xs font-bold shrink-0 mt-0.5">5</span>
+          <div class="text-xs text-slate-300"><strong class="text-white">转导搜索窗口:</strong> SVA 使用 <span class="font-mono text-amber-400">5000bp</span> 搜索窗口（其他类型仅 500bp）<span class="file-ref">xtea/x_transduction.py:103-104</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5.6 MEGAnE Weakness -->
+    <div class="glass rounded-xl p-6 md:p-8 mb-6 border-rose-500/10">
+      <h3 class="text-lg font-semibold text-white mb-4">5.6 MEGAnE 的 SVA 处理不足</h3>
+      <div class="grid md:grid-cols-2 gap-4">
+        <ul class="text-sm text-slate-300 space-y-2">
+          <li class="flex items-start gap-2"><span class="text-rose-400 mt-1">&#x2717;</span> SVA2 被重映射为通用"SINE"类 <span class="file-ref">utils.py:132-146</span></li>
+          <li class="flex items-start gap-2"><span class="text-rose-400 mt-1">&#x2717;</span> 无 SVA 专用过滤逻辑</li>
+          <li class="flex items-start gap-2"><span class="text-rose-400 mt-1">&#x2717;</span> 仅有 L1 专用过滤 <span class="file-ref">filter_candidates.py:110-137</span></li>
+        </ul>
+        <ul class="text-sm text-slate-300 space-y-2">
+          <li class="flex items-start gap-2"><span class="text-rose-400 mt-1">&#x2717;</span> PolyA 检测使用统一 70% 阈值，不考虑 SVA 特有位置</li>
+          <li class="flex items-start gap-2"><span class="text-rose-400 mt-1">&#x2717;</span> 不识别 VNTR 导致的自然变异</li>
+          <li class="flex items-start gap-2"><span class="text-rose-400 mt-1">&#x2717;</span> 无 SVA 亚族分类</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- 5.7 Summary Table -->
+    <div class="glass rounded-xl p-6 md:p-8">
+      <h3 class="text-lg font-semibold text-white mb-4">5.7 SVA 检测差异十维度总结</h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm rounded-lg overflow-hidden">
+          <thead><tr>
+            <th class="text-left text-slate-300">对比维度</th>
+            <th class="text-left text-violet-300">xTea</th>
+            <th class="text-left text-cyan-300">MEGAnE</th>
+          </tr></thead>
+          <tbody>
+            <tr><td class="text-slate-300 font-semibold">VNTR 处理</td><td class="text-emerald-400">&#10003; 放宽一致性检查</td><td class="text-rose-400">&#x2717; 统一过滤</td></tr>
+            <tr><td class="text-slate-300 font-semibold">PolyA 定位</td><td class="text-emerald-400">&#10003; SVA: 1900bp 位置感知</td><td class="text-rose-400">&#x2717; 统一 70% 阈值</td></tr>
+            <tr><td class="text-slate-300 font-semibold">Clip 聚类容差</td><td class="text-emerald-400">&#10003; SVA: 200bp 宽松阈值</td><td class="text-rose-400">&#x2717; 统一阈值</td></tr>
+            <tr><td class="text-slate-300 font-semibold">共识结构感知</td><td class="text-emerald-400">&#10003; SINE-R/VNTR/PolyA 三段式</td><td class="text-rose-400">&#x2717; 通用 SINE 类</td></tr>
+            <tr><td class="text-slate-300 font-semibold">搜索窗口长度</td><td class="text-emerald-400">&#10003; 5000bp (SVA专用)</td><td class="text-rose-400">&#x2717; 统一 (~500bp)</td></tr>
+            <tr><td class="text-slate-300 font-semibold">参考拷贝 FP 过滤</td><td class="text-emerald-400">&#10003; VNTR 边界感知</td><td class="text-rose-400">&#x2717; 通用处理</td></tr>
+            <tr><td class="text-slate-300 font-semibold">亚族分类</td><td class="text-emerald-400">&#10003; SVA subtype 逻辑</td><td class="text-rose-400">&#x2717; 无</td></tr>
+            <tr><td class="text-slate-300 font-semibold">后处理函数</td><td class="text-emerald-400">&#10003; post_processing_SVA()</td><td class="text-rose-400">&#x2717; 仅通用过滤</td></tr>
+            <tr><td class="text-slate-300 font-semibold">全局 SVA 开关</td><td class="text-emerald-400">&#10003; IS_CALL_SVA 控制全流程</td><td class="text-rose-400">&#x2717; 无等价物</td></tr>
+            <tr><td class="text-slate-300 font-semibold">注释边界补偿</td><td class="text-emerald-400">&#10003; +200bp 扩展</td><td class="text-rose-400">&#x2717; 无</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- ====== SECTION 6: OTHER COMPARISONS ====== -->
+<section class="relative py-24 px-6" id="sec6">
+  <div class="section-num">06</div>
+  <div class="max-w-6xl mx-auto section-fade">
+    <div class="flex items-center gap-3 mb-2"><span class="font-mono text-xs text-cyan-400 tracking-widest">SECTION 06</span></div>
+    <h2 class="font-serif text-3xl md:text-4xl font-700 mb-3 text-white">其他能力维度对比</h2>
+    <p class="text-slate-400 mb-12 max-w-2xl">基因分型、TE分类、过滤质控、联合分析、平台支持和特殊检测能力的全方位比较</p>
+
+    <!-- 6.1 Genotyping -->
+    <div class="glass rounded-xl p-6 md:p-8 mb-6">
+      <h3 class="text-lg font-semibold text-white mb-4">6.1 基因分型方法</h3>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="glass-dark rounded-lg p-4">
+          <div class="flex items-center gap-2 mb-2"><span class="tag-megane">MEGAnE</span><span class="text-slate-400 text-xs">三证据 + 高斯拟合</span></div>
+          <ul class="text-xs text-slate-400 space-y-1.5">
+            <li><strong class="text-slate-200">TSD深度:</strong> 插入断点 vs 侧翼区域的覆盖度比值</li>
+            <li><strong class="text-slate-200">Spanning reads:</strong> 完全跨越插入位点的读段计数</li>
+            <li><strong class="text-slate-200">Discordant reads:</strong> 一端位于插入位点的异常配对</li>
+            <li><strong class="text-slate-200">拟合模型:</strong> 双等位高斯函数 (99% CI)</li>
+          </ul>
+          <div class="mt-2"><span class="file-ref">scripts/filter_candidates.py:48-108</span></div>
+        </div>
+        <div class="glass-dark rounded-lg p-4">
+          <div class="flex items-center gap-2 mb-2"><span class="tag-xtea">xTea</span><span class="text-slate-400 text-xs">15维特征 + 机器学习</span></div>
+          <ul class="text-xs text-slate-400 space-y-1.5">
+            <li><strong class="text-slate-200">特征向量:</strong> lclipcns, rclipcns, ldisccns, rdisccns, polyA, lcov, rcov, clip, fullmap, clipratio, discratio, rawlclip, rawrclip, disc, concordant</li>
+            <li><strong class="text-slate-200">分类器:</strong> Deep Forest (DF21) 或 Random Forest</li>
+            <li><strong class="text-slate-200">训练数据:</strong> NA12878 等标准基准集</li>
+          </ul>
+          <div class="mt-2"><span class="file-ref">xtea/x_genotype_classify.py</span> + <span class="file-ref">x_genotype_classify_sklearn.py</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6.2 TE Classification -->
+    <div class="glass rounded-xl p-6 md:p-8 mb-6">
+      <h3 class="text-lg font-semibold text-white mb-4">6.2 TE 类型分类</h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm rounded-lg overflow-hidden">
+          <thead><tr><th class="text-left text-slate-300">维度</th><th class="text-left text-cyan-300">MEGAnE</th><th class="text-left text-violet-300">xTea</th></tr></thead>
+          <tbody>
+            <tr><td class="text-slate-400">分类方法</td><td>BLAST → Dfam 3.2 共识序列，按最佳 E-value</td><td>二进制编码 (1=L1, 2=Alu, 4=SVA, 8=HERV...) + 多信号</td></tr>
+            <tr><td class="text-slate-400">覆盖类型</td><td>LINE1, Alu, SVA, HERV</td><td>LINE1, Alu, SVA, HERV-K, MT插入, MSTA, 假基因</td></tr>
+            <tr><td class="text-slate-400">E-value 阈值</td><td class="font-mono">1e-05 (通用), 1e-25 (L1)</td><td>通过比对比率过滤</td></tr>
+            <tr><td class="text-slate-400">VCF SVTYPE</td><td>MEI (通用)</td><td>INS:ME:LINE1, INS:ME:ALU, INS:ME:SVA 等</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 6.3 Filtering -->
+    <div class="glass rounded-xl p-6 md:p-8 mb-6">
+      <h3 class="text-lg font-semibold text-white mb-4">6.3 过滤质控体系</h3>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="glass-dark rounded-lg p-4">
+          <div class="text-sm font-semibold text-cyan-300 mb-2">MEGAnE</div>
+          <ul class="text-xs text-slate-400 space-y-1">
+            <li>高斯拟合 99% CI 过滤</li>
+            <li>百分位过滤 (bottom 0.1%)</li>
+            <li>L1 特异过滤 (A/T含量 ≥50%, A+T ≥90%)</li>
+            <li>覆盖度自适应阈值</li>
+            <li>VCF FILTER 字段: LC, NU, F, D, S, G, R, Y</li>
+          </ul>
+        </div>
+        <div class="glass-dark rounded-lg p-4">
+          <div class="text-sm font-semibold text-violet-300 mb-2">xTea</div>
+          <ul class="text-xs text-slate-400 space-y-1">
+            <li>Clip 质量验证 (PHRED ≥15)</li>
+            <li>Discordant 配对验证 (MAPQ ≥20)</li>
+            <li>共识比对过滤 (clip比率 ≥0.65, disc比率 ≥0.7)</li>
+            <li>TE 类型专用 PolyA 过滤</li>
+            <li>注释区域过滤 + 黑名单区域</li>
+            <li>ML 基因分型二次过滤</li>
+            <li>转导/孤立事件过滤</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6.4-6.6 Comparison Table -->
+    <div class="glass rounded-xl p-6 md:p-8">
+      <h3 class="text-lg font-semibold text-white mb-4">6.4-6.6 其他关键维度</h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm rounded-lg overflow-hidden">
+          <thead><tr><th class="text-left text-slate-300">能力</th><th class="text-left text-cyan-300">MEGAnE</th><th class="text-left text-violet-300">xTea</th></tr></thead>
+          <tbody>
+            <tr><td class="text-slate-300 font-semibold">联合分析</td><td>分块处理 >10,000 样本 + VCF 整形 (imputation)</td><td>gVCF 输出 + 群体级合并</td></tr>
+            <tr><td class="text-slate-300 font-semibold">测序平台</td><td>Illumina 短读段</td><td>Illumina + 10X + PacBio/Nanopore</td></tr>
+            <tr><td class="text-slate-300 font-semibold">嵌合体检测</td><td class="text-slate-500">&#x2717; 不支持</td><td class="text-emerald-400">&#10003; x_mosaic_calling.py</td></tr>
+            <tr><td class="text-slate-300 font-semibold">肿瘤-正常对照</td><td class="text-slate-500">&#x2717; 不支持</td><td class="text-emerald-400">&#10003; Case-control 模式</td></tr>
+            <tr><td class="text-slate-300 font-semibold">假基因插入</td><td class="text-slate-500">&#x2717; 不支持</td><td class="text-emerald-400">&#10003; INS:PSDGN</td></tr>
+            <tr><td class="text-slate-300 font-semibold">线粒体插入</td><td class="text-slate-500">&#x2717; 不支持</td><td class="text-emerald-400">&#10003; INS:MT</td></tr>
+            <tr><td class="text-slate-300 font-semibold">TE 缺失检测</td><td class="text-emerald-400">&#10003; Absent ME 策略</td><td class="text-slate-500">&#x2717; 空函数 (stub)</td></tr>
+            <tr><td class="text-slate-300 font-semibold">大队列 (>10k)</td><td class="text-emerald-400">&#10003; 分块联合分析</td><td class="text-slate-500">&#x2717; 未优化</td></tr>
+            <tr><td class="text-slate-300 font-semibold">转导检测</td><td class="text-slate-500">基础 3' 转导</td><td class="text-emerald-400">&#10003; 完整 (1,562行模块)</td></tr>
+            <tr><td class="text-slate-300 font-semibold">5' 反转检测</td><td class="text-slate-500">&#x2717; 不支持</td><td class="text-emerald-400">&#10003; FIVE_PRIME_INVERSION</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- ====== SECTION 7: FUSION ====== -->
+<section class="relative py-24 px-6" id="sec7" style="background:linear-gradient(180deg,transparent 0%,rgba(16,185,129,0.03) 50%,transparent 100%)">
+  <div class="section-num">07</div>
+  <div class="max-w-6xl mx-auto section-fade">
+    <div class="flex items-center gap-3 mb-2"><span class="font-mono text-xs text-emerald-400 tracking-widest">SECTION 07 — 行动建议</span></div>
+    <h2 class="font-serif text-3xl md:text-4xl font-700 mb-3 text-white">融合开发关键建议</h2>
+    <p class="text-slate-400 mb-12 max-w-2xl">取长补短策略、技术融合路线图和预期挑战</p>
+
+    <!-- 7.1 Strategy -->
+    <div class="glass rounded-xl p-6 md:p-8 mb-6">
+      <h3 class="text-lg font-semibold text-white mb-4">7.1 取长补短策略</h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm rounded-lg overflow-hidden">
+          <thead><tr>
+            <th class="text-left text-slate-300">能力模块</th>
+            <th class="text-left text-slate-300">建议来源</th>
+            <th class="text-left text-slate-300">理由</th>
+          </tr></thead>
+          <tbody>
+            <tr><td class="text-white font-semibold">速度 / BAM 处理</td><td><span class="tag-megane">MEGAnE C++</span></td><td class="text-slate-400">多线程 + k-mer 过滤远优于纯 Python, 8-12x 速度提升</td></tr>
+            <tr><td class="text-white font-semibold">Deletion 检测</td><td><span class="tag-megane">MEGAnE</span></td><td class="text-slate-400">xTea 完全未实现，这是独有且重要的功能</td></tr>
+            <tr><td class="text-white font-semibold">SVA 检测</td><td><span class="tag-xtea">xTea</span></td><td class="text-slate-400">VNTR 感知 + 结构参数 + SVA 专用过滤层级</td></tr>
+            <tr><td class="text-white font-semibold">基因分型</td><td><span class="tag-xtea">xTea ML</span></td><td class="text-slate-400">15维特征 + ML 分类器优于高斯拟合</td></tr>
+            <tr><td class="text-white font-semibold">联合分析框架</td><td><span class="tag-megane">MEGAnE</span></td><td class="text-slate-400">分块设计更适合大队列 (>10,000 样本)</td></tr>
+            <tr><td class="text-white font-semibold">多平台支持</td><td><span class="tag-xtea">xTea</span></td><td class="text-slate-400">长读段 (PacBio/Nanopore) 支持是行业趋势</td></tr>
+            <tr><td class="text-white font-semibold">转导检测</td><td><span class="tag-xtea">xTea</span></td><td class="text-slate-400">1,562 行完整模块，涵盖孤立/兄弟转导</td></tr>
+            <tr><td class="text-white font-semibold">特殊事件</td><td><span class="tag-xtea">xTea</span></td><td class="text-slate-400">嵌合体/肿瘤/假基因/MT 插入覆盖更全面</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 7.2 Roadmap Timeline -->
+    <div class="glass rounded-xl p-6 md:p-8 mb-6">
+      <h3 class="text-lg font-semibold text-white mb-4">7.2 技术融合路线图</h3>
+      <div id="chartTimeline" style="width:100%;height:340px" class="chart-container"></div>
+    </div>
+
+    <!-- Phase Details -->
+    <div class="space-y-3 mb-6">
+      <div class="glass-dark rounded-lg p-4 flex items-start gap-4">
+        <span class="w-10 h-10 rounded bg-emerald-400/10 flex items-center justify-center font-mono text-emerald-400 text-sm font-bold shrink-0">P1</span>
+        <div>
+          <div class="text-sm font-semibold text-white mb-1">Phase 1: C++ 高速框架底座</div>
+          <div class="text-xs text-slate-400">以 MEGAnE 的 C++ BAM 处理模块为核心，重构 extract_discordant.cpp 和 extract_unmapped.cpp。保留 k-mer 过滤、多线程 I/O、Absent ME 检测。建立 Python-C++ 绑定接口 (pybind11 或 ctypes)。</div>
+        </div>
+      </div>
+      <div class="glass-dark rounded-lg p-4 flex items-start gap-4">
+        <span class="w-10 h-10 rounded bg-emerald-400/10 flex items-center justify-center font-mono text-emerald-400 text-sm font-bold shrink-0">P2</span>
+        <div>
+          <div class="text-sm font-semibold text-white mb-1">Phase 2: 移植 SVA 专项优化</div>
+          <div class="text-xs text-slate-400">将 xTea 的 IS_CALL_SVA 逻辑体系移植: VNTR 一致性放宽、200bp 注释扩展、结构感知参数 (CNS_HEAD/POLYA_START)、post_processing_SVA() 过滤层级。同时为其他 TE 类型建立类似的专用过滤框架。</div>
+        </div>
+      </div>
+      <div class="glass-dark rounded-lg p-4 flex items-start gap-4">
+        <span class="w-10 h-10 rounded bg-emerald-400/10 flex items-center justify-center font-mono text-emerald-400 text-sm font-bold shrink-0">P3</span>
+        <div>
+          <div class="text-sm font-semibold text-white mb-1">Phase 3: 集成 ML 基因分型</div>
+          <div class="text-xs text-slate-400">采用 xTea 的 15 维特征提取 + Deep Forest 分类器，替换 MEGAnE 的高斯拟合。需重新训练模型以适应新框架的特征分布。考虑使用 ONNX Runtime 进行推理加速。</div>
+        </div>
+      </div>
+      <div class="glass-dark rounded-lg p-4 flex items-start gap-4">
+        <span class="w-10 h-10 rounded bg-emerald-400/10 flex items-center justify-center font-mono text-emerald-400 text-sm font-bold shrink-0">P4</span>
+        <div>
+          <div class="text-sm font-semibold text-white mb-1">Phase 4: 长读段支持</div>
+          <div class="text-xs text-slate-400">参考 xTea 的长读段模块，添加 PacBio/Nanopore 数据处理能力。长读段可直接跨越完整 TE 插入，大幅提升断点精度和 SVA/LINE1 全长检测率。</div>
+        </div>
+      </div>
+      <div class="glass-dark rounded-lg p-4 flex items-start gap-4">
+        <span class="w-10 h-10 rounded bg-emerald-400/10 flex items-center justify-center font-mono text-emerald-400 text-sm font-bold shrink-0">P5</span>
+        <div>
+          <div class="text-sm font-semibold text-white mb-1">Phase 5: 统一输出与联合分析</div>
+          <div class="text-xs text-slate-400">统一 VCF 输出格式 (兼容 MEGAnE 的多等位处理和 xTea 的详细 SVTYPE 注释)。整合 MEGAnE 的分块联合分析框架，支持 >10,000 样本群体分析。</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7.3 Challenges -->
+    <div class="glass rounded-xl p-6 md:p-8">
+      <h3 class="text-lg font-semibold text-white mb-4">7.3 预期技术挑战</h3>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="glass-dark rounded-lg p-4">
+          <div class="text-sm font-semibold text-amber-400 mb-2">架构层面</div>
+          <ul class="text-xs text-slate-400 space-y-1.5">
+            <li>C++ 与 Python 的高效绑定接口设计 (pybind11 vs ctypes vs Cython)</li>
+            <li>不同过滤策略的参数空间统一</li>
+            <li>MEGAnE 的覆盖度自适应阈值与 xTea 的固定阈值的协调</li>
+          </ul>
+        </div>
+        <div class="glass-dark rounded-lg p-4">
+          <div class="text-sm font-semibold text-amber-400 mb-2">算法层面</div>
+          <ul class="text-xs text-slate-400 space-y-1.5">
+            <li>ML 基因分型模型的重训练（新框架特征分布不同）</li>
+            <li>VNTR 处理逻辑向其他 TE 类型的泛化</li>
+            <li>Deletion 检测与 insertion 检测的断点一致性</li>
+          </ul>
+        </div>
+        <div class="glass-dark rounded-lg p-4">
+          <div class="text-sm font-semibold text-amber-400 mb-2">工程层面</div>
+          <ul class="text-xs text-slate-400 space-y-1.5">
+            <li>两套不同的 VCF 输出格式合并</li>
+            <li>外部依赖管理 (BWA, BLAST, IDBA_UD, htslib)</li>
+            <li>测试基准集的建立与回归测试</li>
+          </ul>
+        </div>
+        <div class="glass-dark rounded-lg p-4">
+          <div class="text-sm font-semibold text-amber-400 mb-2">验证层面</div>
+          <ul class="text-xs text-slate-400 space-y-1.5">
+            <li>需要标准数据集验证融合后 SVA 检测无回退</li>
+            <li>速度基准: 确保不因新功能大幅降速</li>
+            <li>多平台兼容性测试 (Linux/macOS, 不同 gcc 版本)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- ====== SECTION 8: REFERENCE TABLE ====== -->
+<section class="relative py-24 px-6" id="sec8">
+  <div class="section-num">08</div>
+  <div class="max-w-6xl mx-auto section-fade">
+    <div class="flex items-center gap-3 mb-2"><span class="font-mono text-xs text-cyan-400 tracking-widest">SECTION 08</span></div>
+    <h2 class="font-serif text-3xl md:text-4xl font-700 mb-3 text-white">关键代码文件速查表</h2>
+    <p class="text-slate-400 mb-12 max-w-2xl">两个工具各功能模块的核心文件索引</p>
+
+    <div class="grid md:grid-cols-2 gap-6">
+      <!-- MEGAnE Files -->
+      <div class="glass rounded-xl p-6 md:p-8">
+        <div class="flex items-center gap-2 mb-4"><span class="tag-megane">MEGAnE</span></div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead><tr><th class="text-left text-slate-300 text-xs">模块</th><th class="text-left text-slate-300 text-xs">文件</th></tr></thead>
+            <tbody>
+              <tr><td class="text-slate-400">BAM 读段提取</td><td class="font-mono text-cyan-300">cpp/extract_discordant.cpp</td></tr>
+              <tr><td class="text-slate-400">K-mer 过滤</td><td class="font-mono text-cyan-300">cpp/extract_unmapped.cpp</td></tr>
+              <tr><td class="text-slate-400">K-mer 构建</td><td class="font-mono text-cyan-300">cpp/save_redundant_kmers.cpp</td></tr>
+              <tr><td class="text-slate-400">缺失 TE 检测</td><td class="font-mono text-cyan-300">scripts/find_absent.py</td></tr>
+              <tr><td class="text-slate-400">断点配对</td><td class="font-mono text-cyan-300">scripts/pair_breakpoints.py</td></tr>
+              <tr><td class="text-slate-400">BLAST 解析</td><td class="font-mono text-cyan-300">scripts/parse_blastn_result.py</td></tr>
+              <tr><td class="text-slate-400">候选过滤</td><td class="font-mono text-cyan-300">scripts/filter_candidates.py</td></tr>
+              <tr><td class="text-slate-400">基因分型 (Ins)</td><td class="font-mono text-cyan-300">scripts/allele_count_ins.py</td></tr>
+              <tr><td class="text-slate-400">基因分型 (Del)</td><td class="font-mono text-cyan-300">scripts/allele_count_abs.py</td></tr>
+              <tr><td class="text-slate-400">证据合并</td><td class="font-mono text-cyan-300">scripts/merge_allele_evidence_ins.py</td></tr>
+              <tr><td class="text-slate-400">VCF 输出</td><td class="font-mono text-cyan-300">scripts/output_genotyped_vcf.py</td></tr>
+              <tr><td class="text-slate-400">TE 分类</td><td class="font-mono text-cyan-300">scripts/utils.py</td></tr>
+              <tr><td class="text-slate-400">重复库处理</td><td class="font-mono text-cyan-300">scripts/reshape_rep.py</td></tr>
+              <tr><td class="text-slate-400">主流程 (个体)</td><td class="font-mono text-cyan-300">1_indiv_call_genotype.py</td></tr>
+              <tr><td class="text-slate-400">主流程 (联合)</td><td class="font-mono text-cyan-300">2_joint_calling.py</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- xTea Files -->
+      <div class="glass rounded-xl p-6 md:p-8">
+        <div class="flex items-center gap-2 mb-4"><span class="tag-xtea">xTea</span><span class="text-slate-500 text-xs">~31,449 行</span></div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead><tr><th class="text-left text-slate-300 text-xs">模块</th><th class="text-left text-slate-300 text-xs">文件</th></tr></thead>
+            <tbody>
+              <tr><td class="text-slate-400">Clip 读段提取</td><td class="font-mono text-violet-300">xtea/clip_read.py</td></tr>
+              <tr><td class="text-slate-400">Discordant 聚类</td><td class="font-mono text-violet-300">xtea/disc_cluster.py</td></tr>
+              <tr><td class="text-slate-400">局部组装</td><td class="font-mono text-violet-300">xtea/x_local_assembly.py</td></tr>
+              <tr><td class="text-slate-400">共识比对过滤</td><td class="font-mono text-violet-300">xtea/x_clip_disc_filter.py</td></tr>
+              <tr><td class="text-slate-400">后处理过滤</td><td class="font-mono text-violet-300">xtea/x_post_filter.py</td></tr>
+              <tr><td class="text-slate-400">PolyA 检测</td><td class="font-mono text-violet-300">xtea/x_polyA.py</td></tr>
+              <tr><td class="text-slate-400">转导检测</td><td class="font-mono text-violet-300">xtea/x_transduction.py</td></tr>
+              <tr><td class="text-slate-400">ML 基因分型</td><td class="font-mono text-violet-300">xtea/x_genotype_classify.py</td></tr>
+              <tr><td class="text-slate-400">BWA 重比对</td><td class="font-mono text-violet-300">xtea/bwa_align.py</td></tr>
+              <tr><td class="text-slate-400">TE 类型编码</td><td class="font-mono text-violet-300">xtea/x_rep_type.py</td></tr>
+              <tr><td class="text-slate-400">注释处理</td><td class="font-mono text-violet-300">xtea/x_annotation.py</td></tr>
+              <tr><td class="text-slate-400">TSD 检测</td><td class="font-mono text-violet-300">xtea/x_TSD.py</td></tr>
+              <tr><td class="text-slate-400">全局参数</td><td class="font-mono text-violet-300">xtea/global_values.py</td></tr>
+              <tr><td class="text-slate-400">主流程</td><td class="font-mono text-violet-300">xtea/x_TEA_main.py</td></tr>
+              <tr><td class="text-slate-400">流程生成</td><td class="font-mono text-violet-300">xtea/gnrt_pipeline_local_v38.py</td></tr>
+              <tr><td class="text-slate-400">嵌合体检测</td><td class="font-mono text-violet-300">xtea/x_mosaic_calling.py</td></tr>
+              <tr><td class="text-slate-400">Deletion (空)</td><td class="font-mono text-violet-300">xtea/x_ref_TE_deletion.py</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- ====== FOOTER ====== -->
+<footer class="py-16 px-6 border-t border-slate-800/50">
+  <div class="max-w-6xl mx-auto text-center">
+    <p class="text-sm text-slate-500 mb-2 font-serif">MEGAnE vs xTea 深度代码级对比分析</p>
+    <p class="text-xs text-slate-600">融合开发前期调研报告 &middot; 2026-04-10</p>
+    <p class="text-xs text-slate-700 mt-4">基于 MEGAnE (shohei-kojima/MEGAnE) 与 xTea (parklab/xTea) 源代码分析</p>
+  </div>
+</footer>
+<script>
+// ====== GSAP ScrollTrigger ======
+gsap.registerPlugin(ScrollTrigger);
+
+// Progress bar
+window.addEventListener('scroll', () => {
+  const h = document.documentElement;
+  const pct = (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100;
+  document.getElementById('progressBar').style.width = pct + '%';
+});
+
+// Section fade-in animations
+document.querySelectorAll('.section-fade').forEach(el => {
+  gsap.to(el, {
+    opacity: 1, y: 0, duration: 0.8, ease: 'power2.out',
+    scrollTrigger: { trigger: el, start: 'top 85%', toggleActions: 'play none none none' }
+  });
+});
+
+// ====== ECharts Theme ======
+const cCyan = '#22d3ee', cViolet = '#8b5cf6', cAmber = '#f59e0b', cEmerald = '#10b981', cRose = '#f43f5e';
+const cBg = 'transparent', cText = '#94a3b8', cLine = 'rgba(59,91,219,0.12)';
+const fontSans = 'Inter, sans-serif', fontMono = 'JetBrains Mono, monospace';
+
+function tooltipStyle() {
+  return {
+    backgroundColor: 'rgba(6,11,26,0.92)', borderColor: 'rgba(59,91,219,0.25)', borderWidth: 1,
+    textStyle: { color: '#dce4ff', fontFamily: fontSans, fontSize: 12 },
+    padding: [12, 16]
+  };
+}
+
+// ====== Chart 1: Capability Radar ======
+const chartRadar = echarts.init(document.getElementById('chartRadar'), null, { renderer: 'svg' });
+chartRadar.setOption({
+  title: { text: '能力维度对比雷达图', left: 'center', top: 10, textStyle: { color: '#dce4ff', fontFamily: fontSans, fontSize: 14, fontWeight: 600 } },
+  tooltip: tooltipStyle(),
+  legend: { bottom: 10, textStyle: { color: cText, fontFamily: fontSans, fontSize: 11 }, data: ['MEGAnE', 'xTea'] },
+  radar: {
+    indicator: [
+      { name: '运行速度', max: 10 }, { name: 'SVA 检测', max: 10 }, { name: 'Deletion 检测', max: 10 },
+      { name: '基因分型精度', max: 10 }, { name: '多平台支持', max: 10 }, { name: '转导检测', max: 10 },
+      { name: '大队列分析', max: 10 }, { name: 'TE 类型覆盖', max: 10 }
+    ],
+    shape: 'polygon',
+    splitNumber: 5,
+    axisName: { color: cText, fontFamily: fontSans, fontSize: 11 },
+    splitLine: { lineStyle: { color: cLine } },
+    splitArea: { areaStyle: { color: ['rgba(59,91,219,0.02)', 'rgba(59,91,219,0.04)'] } },
+    axisLine: { lineStyle: { color: cLine } }
+  },
+  series: [{
+    type: 'radar',
+    data: [
+      { value: [9, 4, 9, 6, 3, 3, 9, 6], name: 'MEGAnE', symbol: 'circle', symbolSize: 5,
+        lineStyle: { color: cCyan, width: 2 }, areaStyle: { color: 'rgba(34,211,238,0.1)' }, itemStyle: { color: cCyan } },
+      { value: [3, 9, 1, 8, 9, 9, 5, 9], name: 'xTea', symbol: 'circle', symbolSize: 5,
+        lineStyle: { color: cViolet, width: 2 }, areaStyle: { color: 'rgba(139,92,246,0.1)' }, itemStyle: { color: cViolet } }
+    ]
+  }]
+});
+
+// ====== Chart 2: Code Volume ======
+const chartCodeVol = echarts.init(document.getElementById('chartCodeVolume'), null, { renderer: 'svg' });
+chartCodeVol.setOption({
+  title: { text: '代码量分布对比（按模块）', left: 'center', top: 10, textStyle: { color: '#dce4ff', fontFamily: fontSans, fontSize: 14, fontWeight: 600 } },
+  tooltip: { ...tooltipStyle(), trigger: 'axis', axisPointer: { type: 'shadow' } },
+  legend: { bottom: 10, textStyle: { color: cText, fontFamily: fontSans, fontSize: 11 } },
+  grid: { left: 60, right: 30, top: 50, bottom: 50 },
+  xAxis: { type: 'value', axisLabel: { color: cText, fontFamily: fontMono, fontSize: 10 }, splitLine: { lineStyle: { color: cLine } }, axisLine: { lineStyle: { color: cLine } } },
+  yAxis: {
+    type: 'category', axisLabel: { color: cText, fontFamily: fontSans, fontSize: 11 },
+    data: ['BAM/读段处理', 'Clip/Disc检测', '过滤质控', '基因分型', '转导检测', '局部组装', 'PolyA检测', '主流程/管道', 'VCF/输出'],
+    axisLine: { lineStyle: { color: cLine } }
+  },
+  series: [
+    { name: 'MEGAnE', type: 'bar', barWidth: 12, itemStyle: { color: cCyan, borderRadius: [0, 3, 3, 0] },
+      data: [1550, 350, 320, 400, 0, 0, 0, 530, 250] },
+    { name: 'xTea', type: 'bar', barWidth: 12, itemStyle: { color: cViolet, borderRadius: [0, 3, 3, 0] },
+      data: [500, 1289, 600, 700, 1562, 600, 160, 1200, 1005] }
+  ]
+});
+
+// ====== Chart 3: Runtime Comparison ======
+const chartRuntime = echarts.init(document.getElementById('chartRuntime'), null, { renderer: 'svg' });
+chartRuntime.setOption({
+  title: { text: '运行时间对比 (30x WGS)', left: 'center', top: 10, textStyle: { color: '#dce4ff', fontFamily: fontSans, fontSize: 14, fontWeight: 600 } },
+  tooltip: { ...tooltipStyle(), trigger: 'axis', formatter: function(p) { return p.map(i => i.marker + ' ' + i.seriesName + ': <b>' + i.value + ' h</b>').join('<br>'); } },
+  grid: { left: 50, right: 30, top: 50, bottom: 40 },
+  xAxis: {
+    type: 'category', data: ['BAM处理', '候选检测', '序列验证', '过滤/基因分型', '总计'],
+    axisLabel: { color: cText, fontFamily: fontSans, fontSize: 11 }, axisLine: { lineStyle: { color: cLine } }
+  },
+  yAxis: {
+    type: 'value', name: '小时', nameTextStyle: { color: cText, fontFamily: fontSans, fontSize: 11 },
+    axisLabel: { color: cText, fontFamily: fontMono, fontSize: 10 }, splitLine: { lineStyle: { color: cLine } }
+  },
+  series: [
+    { name: 'MEGAnE (4线程)', type: 'bar', barWidth: 28, itemStyle: { color: cCyan, borderRadius: [4, 4, 0, 0] },
+      data: [0.3, 0.2, 0.2, 0.3, 1.0],
+      markLine: { data: [{ type: 'average', name: '均值' }], lineStyle: { color: cCyan, type: 'dashed', opacity: 0.4 }, label: { color: cCyan, fontSize: 10, fontFamily: fontMono } }
+    },
+    { name: 'xTea (8核)', type: 'bar', barWidth: 28, itemStyle: { color: cViolet, borderRadius: [4, 4, 0, 0] },
+      data: [1.5, 2.0, 3.5, 3.0, 10.0],
+      markLine: { data: [{ type: 'average', name: '均值' }], lineStyle: { color: cViolet, type: 'dashed', opacity: 0.4 }, label: { color: cViolet, fontSize: 10, fontFamily: fontMono } }
+    }
+  ]
+});
+
+// ====== Chart 4: Fusion Timeline ======
+const chartTL = echarts.init(document.getElementById('chartTimeline'), null, { renderer: 'svg' });
+chartTL.setOption({
+  title: { text: '技术融合路线图', left: 'center', top: 10, textStyle: { color: '#dce4ff', fontFamily: fontSans, fontSize: 14, fontWeight: 600 } },
+  tooltip: tooltipStyle(),
+  grid: { left: 30, right: 30, top: 60, bottom: 30 },
+  xAxis: { type: 'category', data: ['Phase 1', 'Phase 2', 'Phase 3', 'Phase 4', 'Phase 5'], axisLabel: { color: cText, fontFamily: fontMono, fontSize: 11 }, axisLine: { lineStyle: { color: cLine } } },
+  yAxis: { show: false },
+  series: [
+    {
+      type: 'bar', barWidth: 40, itemStyle: {
+        borderRadius: [6, 6, 6, 6],
+        color: function(params) {
+          var colors = [
+            'rgba(34,211,238,0.7)', 'rgba(139,92,246,0.7)', 'rgba(245,158,11,0.7)',
+            'rgba(16,185,129,0.7)', 'rgba(59,91,219,0.7)'
+          ];
+          return colors[params.dataIndex];
+        }
+      },
+      data: [8, 7, 6, 5, 5],
+      label: {
+        show: true, position: 'inside', fontFamily: fontSans, fontSize: 10, color: '#fff',
+        formatter: function(p) {
+          var labels = ['C++ 框架底座', 'SVA 优化移植', 'ML 基因分型', '长读段支持', '统一输出'];
+          return labels[p.dataIndex];
+        }
+      }
+    },
+    {
+      type: 'scatter', symbolSize: 0,
+      data: [[0, 9], [1, 8], [2, 7], [3, 6], [4, 6]],
+      label: {
+        show: true, fontFamily: fontMono, fontSize: 10, color: cText,
+        formatter: function(p) {
+          var srcs = ['MEGAnE', 'xTea', 'xTea', 'xTea', '双方'];
+          return '来源: ' + srcs[p.dataIndex];
+        }
+      }
+    }
+  ]
+});
+
+// ====== Resize ======
+window.addEventListener('resize', () => {
+  chartRadar.resize(); chartCodeVol.resize(); chartRuntime.resize(); chartTL.resize();
+});
+</script>
+</body>
+</html>
