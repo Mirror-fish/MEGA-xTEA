@@ -95,9 +95,9 @@ def _print_banner() -> None:
     )
 
 
-def _elapsed(start: float) -> str:
-    """Return a human-readable elapsed time string."""
-    secs = time.time() - start
+def _elapsed(seconds: float) -> str:
+    """Return a human-readable elapsed time string from a duration in seconds."""
+    secs = abs(seconds)
     if secs < 60:
         return f"{secs:.1f}s"
     mins = int(secs // 60)
@@ -209,10 +209,10 @@ class StepRunner:
         try:
             result = func(*args, **kwargs)
         except Exception:
-            logger.error("Step [%s] -- FAILED after %s", name, _elapsed(t0))
+            logger.error("Step [%s] -- FAILED after %s", name, _elapsed(time.time() - t0))
             raise
         elapsed = time.time() - t0
-        logger.info("Step [%s] -- done in %s", name, _elapsed(elapsed + t0 - t0))
+        logger.info("Step [%s] -- done in %s", name, _elapsed(elapsed))
         self.timings.append({"step": name, "elapsed": elapsed, "skipped": False})
         return result
 
@@ -226,7 +226,7 @@ class StepRunner:
             status = "SKIP" if entry.get("skipped") else _elapsed(entry["elapsed"])
             logger.info("  %-35s %s", entry["step"], status)
         logger.info("-" * 60)
-        logger.info("  %-35s %s", "TOTAL", _elapsed(total + self._pipeline_start - self._pipeline_start))
+        logger.info("  %-35s %s", "TOTAL", _elapsed(total))
         logger.info("=" * 60)
 
 
@@ -255,7 +255,7 @@ def cmd_build_kmer(args: argparse.Namespace) -> None:
     ]
     t0 = time.time()
     _run_cmd(cmd, description="build-kmer")
-    logger.info("K-mer set built in %s", _elapsed(t0))
+    logger.info("K-mer set built in %s", _elapsed(time.time() - t0))
     logger.info("Output: %s", outdir)
 
 
@@ -314,8 +314,8 @@ def cmd_call(args: argparse.Namespace) -> None:
 
     repout = args.repeat_masker_out
     repremove = args.non_me_rep or str(docs_dir / "human_non_ME_rep_headers.txt")
-    pA_ME = args.me_with_pa or str(docs_dir / "ME_with_pA.txt")
-    mainchr = args.main_chr or str(docs_dir / "main_chr.txt")
+    pA_ME = args.me_with_pa or str(docs_dir / "human_ME_with_polyA_tail.txt")
+    mainchr = args.main_chr or str(docs_dir / "hg38_human_main_chrs_ucsc_style.txt")
 
     # Determine sample name
     sample_name = args.sample_name
@@ -358,8 +358,8 @@ def cmd_call(args: argparse.Namespace) -> None:
     # Step 3: Extract discordant + unmapped reads (C++ accelerated)
     # ------------------------------------------------------------------
     def step_extract() -> None:
-        extract_disc = str(cpp_dir / "extract_discordant")
-        extract_unmap = str(cpp_dir / "extract_unmapped")
+        extract_disc = str(cpp_dir / "extract_discordant.so")
+        extract_unmap = str(cpp_dir / "extract_unmapped.so")
 
         if os.path.isfile(extract_disc):
             cmd = [
@@ -653,7 +653,7 @@ def cmd_joint_call(args: argparse.Namespace) -> None:
 
     t0 = time.time()
     _run_cmd(cmd, description="joint-calling")
-    logger.info("Joint calling finished in %s", _elapsed(t0))
+    logger.info("Joint calling finished in %s", _elapsed(time.time() - t0))
     logger.info("Output: %s", outdir)
 
 
@@ -684,7 +684,7 @@ def cmd_reshape_vcf(args: argparse.Namespace) -> None:
 
     t0 = time.time()
     _run_cmd(cmd, description="reshape-vcf")
-    logger.info("VCF reshape finished in %s", _elapsed(t0))
+    logger.info("VCF reshape finished in %s", _elapsed(time.time() - t0))
 
 
 # ---------------------------------------------------------------------------
