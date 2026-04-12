@@ -1,0 +1,37 @@
+{
+    "mega_xtea_batch.input_bams": [
+        "/path/to/bams/sample1.bam",
+        "/path/to/bams/sample2.bam",
+        "/path/to/bams/sample3.bam"
+    ],
+    "mega_xtea_batch.input_bam_indices": [
+        "/path/to/bams/sample1.bam.bai",
+        "/path/to/bams/sample2.bam.bai",
+        "/path/to/bams/sample3.bam.bai"
+    ],
+    "mega_xtea_batch.sample_names": [
+        "sample1",
+        "sample2",
+        "sample3"
+    ],
+
+    "mega_xtea_batch.reference_fasta":       "/path/to/reference/GRCh38.fa",
+    "mega_xtea_batch.reference_fasta_index":  "/path/to/reference/GRCh38.fa.fai",
+    "mega_xtea_batch.reference_blast_nhr":    "/path/to/reference/GRCh38.fa.nhr",
+    "mega_xtea_batch.reference_blast_nin":    "/path/to/reference/GRCh38.fa.nin",
+    "mega_xtea_batch.reference_blast_nsq":    "/path/to/reference/GRCh38.fa.nsq",
+    "mega_xtea_batch.repeat_masker_out":      "/path/to/reference/GRCh38.fa.out",
+    "mega_xtea_batch.repeat_library":         "/path/to/reference/Dfam3.2_human.rep",
+
+    "mega_xtea_batch.kmer_mk": "/path/to/kmer/GRCh38.mk",
+    "mega_xtea_batch.kmer_mi": "/path/to/kmer/GRCh38.mi",
+
+    "mega_xtea_batch.sva_filter":       true,
+    "mega_xtea_batch.ml_genotype":      true,
+    "mega_xtea_batch.detect_deletion":  true,
+
+    "mega_xtea_batch.threads_per_sample":  8,
+    "mega_xtea_batch.memory_gb_per_sample": 16,
+    "mega_xtea_batch.disk_gb_per_sample":  100,
+    "mega_xtea_batch.docker_image":        "mega-xtea:latest"
+}
