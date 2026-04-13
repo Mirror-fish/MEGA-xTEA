@@ -24,7 +24,8 @@ task mega_xtea_call {
         File reference_blast_nhr          # makeblastdb outputs
         File reference_blast_nin
         File reference_blast_nsq
-        File repeat_masker_out            # RepeatMasker .out file
+        File? repeat_masker_out           # RepeatMasker .out file (optional if repeat_masker_bed provided)
+        File? repeat_masker_bed           # Pre-converted BED (alternative to .out)
         File repeat_library               # Dfam FASTA (e.g. Dfam3.2_human.rep)
 
         # ---- K-mer set (pre-built via build-kmer) ----
@@ -66,7 +67,7 @@ task mega_xtea_call {
         ln -s ~{reference_blast_nhr}   "${REF_DIR}/~{ref_basename}.nhr"
         ln -s ~{reference_blast_nin}   "${REF_DIR}/~{ref_basename}.nin"
         ln -s ~{reference_blast_nsq}   "${REF_DIR}/~{ref_basename}.nsq"
-        ln -s ~{repeat_masker_out}     "${REF_DIR}/~{ref_basename}.out"
+        ~{if defined(repeat_masker_out) then "ln -s " + repeat_masker_out + " \"${REF_DIR}/" + ref_basename + ".out\"" else "# repeat_masker_out not provided"}
 
         # Stage BAM/CRAM + index together (auto-detect format)
         BAM_DIR="$(pwd)/bam"
@@ -104,7 +105,10 @@ task mega_xtea_call {
         CMD="${CMD} -o ${OUT_DIR}"
         CMD="${CMD} -t ~{threads}"
         CMD="${CMD} --sample-name ~{sample_name}"
-        CMD="${CMD} --repeat-masker-out ${REF_DIR}/~{ref_basename}.out"
+
+        # Pass repeat masker data (BED preferred over .out)
+        ~{if defined(repeat_masker_bed) then "" else "CMD=\"${CMD} --repeat-masker-out ${REF_DIR}/" + ref_basename + ".out\""}
+        ~{if defined(repeat_masker_bed) then "CMD=\"${CMD} --repeat-masker-bed " + repeat_masker_bed + "\"" else ""}
 
         # SVA filter
         if [ "~{sva_filter}" = "true" ]; then
@@ -194,7 +198,8 @@ workflow mega_xtea_batch {
         File reference_blast_nhr
         File reference_blast_nin
         File reference_blast_nsq
-        File repeat_masker_out
+        File? repeat_masker_out
+        File? repeat_masker_bed
         File repeat_library
 
         # ---- K-mer set ----
@@ -232,6 +237,7 @@ workflow mega_xtea_batch {
                 reference_blast_nin = reference_blast_nin,
                 reference_blast_nsq = reference_blast_nsq,
                 repeat_masker_out   = repeat_masker_out,
+                repeat_masker_bed   = repeat_masker_bed,
                 repeat_library      = repeat_library,
                 kmer_mk             = kmer_mk,
                 kmer_mi             = kmer_mi,

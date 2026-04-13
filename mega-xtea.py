@@ -313,6 +313,7 @@ def cmd_call(args: argparse.Namespace) -> None:
     docs_dir = base_dir / "docs"
 
     repout = args.repeat_masker_out
+    repout_bed = args.repeat_masker_bed
     repremove = args.non_me_rep or str(docs_dir / "human_non_ME_rep_headers.txt")
     pA_ME = args.me_with_pa or str(docs_dir / "human_ME_with_polyA_tail.txt")
     mainchr = args.main_chr or str(docs_dir / "hg38_human_main_chrs_ucsc_style.txt")
@@ -419,7 +420,6 @@ def cmd_call(args: argparse.Namespace) -> None:
             "-fadb", fadb,
             "-mk", args.kmer,
             "-rep", args.repeat_lib,
-            "-repout", repout,
             "-repremove", repremove,
             "-pA_ME", pA_ME,
             "-mainchr", mainchr,
@@ -428,6 +428,17 @@ def cmd_call(args: argparse.Namespace) -> None:
             "-outdir", outdir,
             "-p", str(args.threads),
         ]
+        # Pass either pre-converted BED or raw .out file
+        if repout_bed:
+            cmd.extend(["-repout_bed", repout_bed])
+            # -repout is now optional; provide a dummy if not set
+            if repout:
+                cmd.extend(["-repout", repout])
+        elif repout:
+            cmd.extend(["-repout", repout])
+        else:
+            logger.error("Either --repeat-masker-out or --repeat-masker-bed must be provided.")
+            sys.exit(1)
         # Add optional flags
         if not args.detect_deletion:
             cmd.append("-only_ins")
@@ -768,7 +779,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_call.add_argument("--min-coverage", type=int, default=None, help="Minimum coverage for calling (default: auto-detect)")
 
     # MEGAnE ancillary files (usually auto-detected from docs/)
-    p_call.add_argument("--repeat-masker-out", default=None, help="RepeatMasker output file (.out); required if not in default location")
+    p_call.add_argument("--repeat-masker-out", default=None, help="RepeatMasker output file (.out); not required if --repeat-masker-bed is provided")
+    p_call.add_argument("--repeat-masker-bed", default=None, help="Pre-converted RepeatMasker BED file (5 cols: chr, start, end, name:class, strand); alternative to --repeat-masker-out")
     p_call.add_argument("--non-me-rep", default=None, help="Non-ME repeat class names file")
     p_call.add_argument("--me-with-pa", default=None, help="ME classes with polyA tail file")
     p_call.add_argument("--main-chr", default=None, help="Main chromosome list file")
