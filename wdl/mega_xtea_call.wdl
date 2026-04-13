@@ -14,8 +14,8 @@ version 1.0
 task mega_xtea_call {
     input {
         # ---- Required inputs ----
-        File input_bam
-        File input_bam_index              # .bai or .csi
+        File input_bam                       # .bam or .cram
+        File input_bam_index              # .bai/.csi or .crai
         String sample_name
 
         # ---- Reference bundle (shared across all samples) ----
@@ -68,11 +68,19 @@ task mega_xtea_call {
         ln -s ~{reference_blast_nsq}   "${REF_DIR}/~{ref_basename}.nsq"
         ln -s ~{repeat_masker_out}     "${REF_DIR}/~{ref_basename}.out"
 
-        # Stage BAM + index together
+        # Stage BAM/CRAM + index together (auto-detect format)
         BAM_DIR="$(pwd)/bam"
         mkdir -p "${BAM_DIR}"
-        ln -s ~{input_bam}       "${BAM_DIR}/~{sample_name}.bam"
-        ln -s ~{input_bam_index} "${BAM_DIR}/~{sample_name}.bam.bai"
+        INPUT_FILE="~{input_bam}"
+        if [[ "${INPUT_FILE}" == *.cram ]]; then
+            ln -s ~{input_bam}       "${BAM_DIR}/~{sample_name}.cram"
+            ln -s ~{input_bam_index} "${BAM_DIR}/~{sample_name}.cram.crai"
+            INPUT_PATH="${BAM_DIR}/~{sample_name}.cram"
+        else
+            ln -s ~{input_bam}       "${BAM_DIR}/~{sample_name}.bam"
+            ln -s ~{input_bam_index} "${BAM_DIR}/~{sample_name}.bam.bai"
+            INPUT_PATH="${BAM_DIR}/~{sample_name}.bam"
+        fi
 
         # Stage k-mer files together
         KMER_DIR="$(pwd)/kmer"
@@ -89,7 +97,7 @@ task mega_xtea_call {
         # Build command
         # ----------------------------------------------------------------
         CMD="python3 /opt/mega-xtea/mega-xtea.py call"
-        CMD="${CMD} -i ${BAM_DIR}/~{sample_name}.bam"
+        CMD="${CMD} -i ${INPUT_PATH}"
         CMD="${CMD} -r ${REF_DIR}/~{ref_basename}"
         CMD="${CMD} -k ${KMER_DIR}/${KMER_BASE}.mk"
         CMD="${CMD} -R ~{repeat_library}"

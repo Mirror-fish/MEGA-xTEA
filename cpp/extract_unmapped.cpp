@@ -136,7 +136,7 @@ int extract_unmapped(std::string bam, std::string mk, std::string mi, std::strin
     // open bam
     const char *f= bam.c_str();
     htsFile *fp=hts_open(f, "r");
-    if (is_cram) {
+    if (is_cram && !ref_fa.empty()) {
         hts_set_opt(fp, CRAM_OPT_REFERENCE, ref_fa.c_str());
     }
     sam_hdr_t *h=sam_hdr_read(fp);
@@ -227,6 +227,10 @@ int main(int argc, char *argv[]) {
     std::string ref_fa="";
     if (argc == 6) {
         ref_fa=argv[5];
+        // If sentinel value, clear ref_fa so htslib relies on REF_CACHE
+        if (ref_fa == "CRAM_REF_CACHE_ONLY") {
+            ref_fa = "";
+        }
     }
     
     std::cout << "bam " << bam << std::endl;

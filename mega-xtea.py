@@ -361,15 +361,21 @@ def cmd_call(args: argparse.Namespace) -> None:
         extract_disc = str(cpp_dir / "extract_discordant.so")
         extract_unmap = str(cpp_dir / "extract_unmapped.so")
 
+        # Detect CRAM input — pass sentinel so C++ relies on REF_CACHE
+        is_cram = args.input.lower().endswith(".cram")
+        ref_arg = "CRAM_REF_CACHE_ONLY" if is_cram else args.reference
+
         if os.path.isfile(extract_disc):
             cmd = [
                 extract_disc,
                 args.input,
-                args.reference,
+                mainchr,
                 args.kmer,
                 outdir,
                 str(args.threads),
             ]
+            if is_cram:
+                cmd.append(ref_arg)
             _run_cmd(cmd, description="extract_discordant (C++)", env=env_threads)
         else:
             logger.warning(
@@ -385,6 +391,8 @@ def cmd_call(args: argparse.Namespace) -> None:
                 outdir,
                 str(args.threads),
             ]
+            if is_cram:
+                cmd.append(ref_arg)
             _run_cmd(cmd, description="extract_unmapped (C++)", env=env_threads)
         else:
             logger.warning(

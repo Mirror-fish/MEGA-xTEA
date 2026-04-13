@@ -1065,14 +1065,14 @@ int extract_discordant_per_chr(const char* f, int tid, const options& opts,
     
     // open bam
     htsFile *fp=hts_open(f, "r");
-    if (opts.is_cram) {
+    if (opts.is_cram && !opts.ref_fa.empty()) {
         hts_set_opt(fp, CRAM_OPT_REFERENCE, (opts.ref_fa).c_str());
     }
     sam_hdr_t *h=sam_hdr_read(fp);
     bam1_t *b= bam_init1();
     hts_idx_t *idx = nullptr;
     idx=sam_index_load(fp, f);
-        
+
     // determine iter region
     const hts_pos_t beg = 0;  // chr start pos
     hts_pos_t end = h->target_len[tid];  // chr end pos
@@ -1174,12 +1174,12 @@ int extract_discordant(std::string bam, std::string f_mainchr, std::string mk, s
     // open bam
     const char *f= (opts.bam).c_str();
     htsFile *fp=hts_open(f, "r");
-    if (opts.is_cram) {
+    if (opts.is_cram && !opts.ref_fa.empty()) {
         hts_set_opt(fp, CRAM_OPT_REFERENCE, (opts.ref_fa).c_str());
     }
     sam_hdr_t *h=sam_hdr_read(fp);
     bam1_t *b= bam_init1();
-    
+
     // open bai
     hts_idx_t *idx = nullptr;
     idx=sam_index_load(fp, f);
@@ -1294,6 +1294,10 @@ int main(int argc, char *argv[]) {
     std::string ref_fa="";
     if (argc == 7) {
         ref_fa=argv[6];
+        // If sentinel value, clear ref_fa so htslib relies on REF_CACHE
+        if (ref_fa == "CRAM_REF_CACHE_ONLY") {
+            ref_fa = "";
+        }
     }
     
     std::cout << "bam " << bam << std::endl;
