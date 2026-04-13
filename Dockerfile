@@ -64,13 +64,14 @@ ENV LC_ALL=C.UTF-8
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
+    build-essential \
     python3-dev \
     samtools \
     bedtools \
     ncbi-blast+ \
-    zlib1g \
-    libbz2-1.0 \
-    liblzma5 \
+    zlib1g-dev \
+    libbz2-dev \
+    liblzma-dev \
     libcurl4 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -81,7 +82,9 @@ RUN ldconfig
 
 # Install Python dependencies
 COPY requirements.txt /tmp/requirements.txt
-RUN pip3 install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
+RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip3 install --no-cache-dir -r /tmp/requirements.txt && \
+    rm /tmp/requirements.txt
 
 # Copy MEGA-xTEA
 WORKDIR /opt/mega-xtea
