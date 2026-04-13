@@ -84,14 +84,16 @@ def check(args, argv, init_base):
             else:
                 log.logger.debug('%s found.' % f_check)
         
-        # check .so path
-        for so in ['extract_discordant.so', 'extract_unmapped.so', 'remove_multimapping_reads_from_fa.so', 'convert_rep_to_2bit_k11.so']:
+        # check .so / executable path
+        for so in ['extract_discordant', 'extract_unmapped', 'remove_multimapping_reads_from_fa.so', 'convert_rep_to_2bit_k11.so']:
             f_check='%s/cpp/%s' % (init_base, so)
-            if os.path.exists(f_check) is False:
+            f_check_so='%s/cpp/%s.so' % (init_base, so)
+            if os.path.exists(f_check) is False and os.path.exists(f_check_so) is False:
                 log.logger.error('%s was not found. Please compile MEGAnE before run this script.' % f_check)
                 exit(1)
             else:
-                log.logger.debug('%s found.' % f_check)
+                found = f_check if os.path.exists(f_check) else f_check_so
+                log.logger.debug('%s found.' % found)
         
         # check .mk and .mi files
         if args.mk is None:
