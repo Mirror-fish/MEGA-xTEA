@@ -1294,10 +1294,6 @@ int main(int argc, char *argv[]) {
     std::string ref_fa="";
     if (argc == 7) {
         ref_fa=argv[6];
-        // If sentinel value, clear ref_fa so htslib relies on REF_CACHE
-        if (ref_fa == "CRAM_REF_CACHE_ONLY") {
-            ref_fa = "";
-        }
     }
     
     std::cout << "bam " << bam << std::endl;
