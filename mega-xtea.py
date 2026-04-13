@@ -359,8 +359,20 @@ def cmd_call(args: argparse.Namespace) -> None:
     # Step 3: Extract discordant + unmapped reads (C++ accelerated)
     # ------------------------------------------------------------------
     def step_extract() -> None:
-        extract_disc = str(cpp_dir / "extract_discordant.so")
-        extract_unmap = str(cpp_dir / "extract_unmapped.so")
+        # Prefer executable (compiled without -shared) over .so for subprocess use.
+        # The .so files are shared libraries meant for ctypes; running them as
+        # standalone commands causes SIGSEGV because they lack _start / CRT init.
+        extract_disc_exe = str(cpp_dir / "extract_discordant")
+        extract_disc_so = str(cpp_dir / "extract_discordant.so")
+        extract_disc = (
+            extract_disc_exe if os.path.isfile(extract_disc_exe) else extract_disc_so
+        )
+
+        extract_unmap_exe = str(cpp_dir / "extract_unmapped")
+        extract_unmap_so = str(cpp_dir / "extract_unmapped.so")
+        extract_unmap = (
+            extract_unmap_exe if os.path.isfile(extract_unmap_exe) else extract_unmap_so
+        )
 
         # Detect CRAM input — pass reference path so htslib can decode
         is_cram = args.input.lower().endswith(".cram")

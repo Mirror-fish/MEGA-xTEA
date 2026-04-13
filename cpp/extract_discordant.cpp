@@ -1266,8 +1266,13 @@ int extract_discordant(std::string bam, std::string f_mainchr, std::string mk, s
 }
 
 
+}  // namespace extract_discordant_hpp
+
+
 /*
  This is a main func for direct use.
+ Must be at global scope so it works both as an executable entry point
+ and when loaded via ctypes/dlsym("main").
  usage: %prog input.bam/cram main_chrs.txt input.mk output_dir n_thread [reference.fa]
  */
 int main(int argc, char *argv[]) {
@@ -1282,7 +1287,7 @@ int main(int argc, char *argv[]) {
         std::cerr << "Please specify required files." << std::endl;
         return 1;
     }
-    
+
     std::string bam=argv[1];
     std::string f_mainchr=argv[2];
     std::string mk=argv[3];
@@ -1295,7 +1300,7 @@ int main(int argc, char *argv[]) {
     if (argc == 7) {
         ref_fa=argv[6];
     }
-    
+
     std::cout << "bam " << bam << std::endl;
     std::cout << "f_mainchr " << f_mainchr << std::endl;
     std::cout << "mk " << mk << std::endl;
@@ -1304,9 +1309,7 @@ int main(int argc, char *argv[]) {
     std::cout << "n_thread " << n_thread << std::endl;
     std::cout << "ref_fa " << ref_fa << std::endl;
     std::cout << "is_cram " << is_cram << std::endl;
-    
-    int ret = extract_discordant(bam, f_mainchr, mk, mi, ref_fa, outdir, n_thread, is_cram);
+
+    int ret = extract_discordant_hpp::extract_discordant(bam, f_mainchr, mk, mi, ref_fa, outdir, n_thread, is_cram);
     return ret;
 }
-
-}  // namespace

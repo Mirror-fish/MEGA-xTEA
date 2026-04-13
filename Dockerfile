@@ -50,8 +50,8 @@ RUN sed -i 's|LHTS = $(CURDIR)/external/htslib|LHTS = /usr/local|' Makefile && \
 # Compile C++ modules
 RUN make -j$(nproc)
 
-# Verify .so files
-RUN ls -la cpp/*.so
+# Verify compiled binaries
+RUN ls -la cpp/extract_discordant cpp/extract_unmapped cpp/*.so
 
 # ---------- Stage 2: Runtime ----------
 FROM ubuntu:22.04
@@ -85,6 +85,8 @@ RUN pip3 install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements
 
 # Copy MEGA-xTEA
 WORKDIR /opt/mega-xtea
+COPY --from=builder /opt/mega-xtea/cpp/extract_discordant cpp/
+COPY --from=builder /opt/mega-xtea/cpp/extract_unmapped cpp/
 COPY --from=builder /opt/mega-xtea/cpp/*.so cpp/
 COPY mega-xtea.py .
 COPY megaxtea/ megaxtea/
