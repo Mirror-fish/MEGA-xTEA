@@ -345,26 +345,30 @@ void sort_chr_order(hts_idx_t *idx, sam_hdr_t *h, std::vector<int> &sorted_chr) 
  Returns chr names (tid).
  Chr names are in vector sorted by the lengths of chrs.
  This is available for CRAM.
+ Unlike BAM index, CRAM index does not carry per-sequence read counts,
+ so we filter by reference length > 0 to skip empty/placeholder sequences.
  */
 void sort_chr_order(sam_hdr_t *h, std::vector<int> &sorted_chr) {
-    // retrieve mapped read counts from bam index
     int32_t nseq = h->n_targets;    // number of chrs
-    std::cout << nseq << " chrs found." << std::endl;
+    std::cout << nseq << " chrs found in header." << std::endl;
     std::vector<std::pair<int64_t, int32_t>> ref_lens;  // pair<ref_len, tid>
     ref_lens.reserve(nseq);
     for (int32_t tid=0; tid < nseq; tid++) {
-        ref_lens.push_back(std::make_pair(h->target_len[tid], tid));
+        if (h->target_len[tid] > 0) {
+            ref_lens.push_back(std::make_pair(h->target_len[tid], tid));
+        }
     }
-    
-    // ascending by mapped read counts
+
+    // ascending by ref length
     std::sort(ref_lens.begin(), ref_lens.end());
     int vec_size=ref_lens.size();
-    
-    // convert to desceding order
+
+    // convert to descending order
     sorted_chr.reserve(vec_size);
     for (int i= vec_size - 1; i >= 0; i--) {
         sorted_chr.push_back(ref_lens[i].second);
     }
+    std::cout << "n = " << sorted_chr.size() << " non-empty sequences selected for scanning." << std::endl;
 }
 
 
@@ -1247,10 +1251,9 @@ int extract_discordant(std::string bam, std::string f_mainchr, std::string mk, s
     comp_init();  // make complementary table
     for (int tid : sorted_chr) {
         results.emplace_back(
-            mpool.enqueue([=] {
+            mpool.enqueue([&, tid] {
                 return extract_discordant_per_chr(f, tid, opts, crepkmer, num_kmer,
-                                                  (const std::vector<std::string>)mainchrs,
-                                                  (const std::unordered_map<std::string, bool>)is_mainchr);  // core func
+                                                  mainchrs, is_mainchr);  // core func
             })
         );
     }

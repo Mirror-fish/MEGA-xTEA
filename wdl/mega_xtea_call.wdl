@@ -45,7 +45,7 @@ task mega_xtea_call {
 
         # ---- Runtime ----
         Int threads = 8
-        Int memory_gb = 32          # CRAM needs ~32 GB (each thread caches ref sequences); BAM is fine with 16 GB
+        Int memory_gb = 16
         Int disk_gb = 100
         String docker_image = "mega-xtea:latest"
     }
@@ -219,7 +219,7 @@ workflow mega_xtea_batch {
 
         # ---- Runtime per sample ----
         Int threads_per_sample = 8
-        Int memory_gb_per_sample = 32
+        Int memory_gb_per_sample = 16
         Int disk_gb_per_sample = 100
         String docker_image = "mega-xtea:latest"
     }
