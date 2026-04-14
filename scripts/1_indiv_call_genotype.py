@@ -206,6 +206,21 @@ if args.only_geno is False:
         os.remove(filenames.blast0_res)
         os.remove(filenames.rep_slide_file)
     
+    # --- Ensure reference genome BLAST DB is compatible with local BLAST+ ---
+    # Pre-built BLAST databases may use v4 format (.nhr/.nin/.nsq only), but
+    # BLAST+ 2.13+ (Ubuntu 22.04) expects v5 format (LMDB-based, with .ndb).
+    # If the DB appears to be v4, rebuild it from the reference FASTA.
+    _fadb_ndb = args.fadb + '.ndb'
+    _fadb_nhr = args.fadb + '.nhr'
+    if os.path.exists(_fadb_nhr) and not os.path.exists(_fadb_ndb):
+        log.logger.info('Reference BLAST DB appears to be v4 format (missing .ndb). Rebuilding with local makeblastdb...')
+        blastn.makeblastdb(args.fa, args.fadb)
+        log.logger.info('Reference BLAST DB rebuilt successfully.')
+    elif not os.path.exists(_fadb_nhr):
+        log.logger.info('Reference BLAST DB not found. Building from FASTA: %s' % args.fa)
+        blastn.makeblastdb(args.fa, args.fadb)
+        log.logger.info('Reference BLAST DB built successfully.')
+
     # 1. process unmapped overhangs
     import parse_blastn_result, find_additional_pA, extract_discordant
     from multiprocessing import Pool
