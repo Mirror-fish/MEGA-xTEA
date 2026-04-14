@@ -169,10 +169,18 @@ def setup(args, base):
             pysam.faidx(args.fa)
             log.logger.info('Fasta index not found. Generated %s.fai.' % args.fa)
         else:
-            diff= os.stat(args.fa + '.fai').st_mtime - os.stat(args.fa).st_mtime
-            if not diff > 0:
-                log.logger.error('Fasta index %s.fai was older than fasta. Please generate fasta index again.' % args.fa)
-                exit(1)
+            # When files are symlinks (e.g. Cromwell/WDL localization), mtime
+            # comparison is unreliable — the targets were created independently.
+            # Only enforce the check for real (non-symlink) files.
+            if not os.path.islink(args.fa) and not os.path.islink(args.fa + '.fai'):
+                diff= os.stat(args.fa + '.fai').st_mtime - os.stat(args.fa).st_mtime
+                if not diff > 0:
+                    log.logger.warning('Fasta index %s.fai appears older than fasta. Regenerating.' % args.fa)
+                    import pysam
+                    pysam.faidx(args.fa)
+                    log.logger.info('Regenerated %s.fai.' % args.fa)
+            else:
+                log.logger.debug('Fasta and/or index are symlinks; skipping mtime check.')
         fai_path=args.fa + '.fai'
         
         # load parameter settings
