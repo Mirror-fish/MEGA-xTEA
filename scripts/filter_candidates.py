@@ -104,7 +104,11 @@ def filter(args, params, filenames):
                 rss=np.sum(residuals**2)
                 tss=np.sum((y - np.mean(y))**2)
                 r_squared= 1 - (rss / tss)
-            reject1perc=norm.interval(alpha=params.fit_gaussian_CI_alpha, loc=popt[1], scale=abs(popt[2]))
+            # scipy >=1.9 renamed 'alpha' to 'confidence' in rv_generic.interval()
+            try:
+                reject1perc=norm.interval(confidence=params.fit_gaussian_CI_alpha, loc=popt[1], scale=abs(popt[2]))
+            except TypeError:
+                reject1perc=norm.interval(alpha=params.fit_gaussian_CI_alpha, loc=popt[1], scale=abs(popt[2]))
             return x, y, popt, pcov, reject1perc, r_squared, coeff
 
         def L1_filter(line, r_pos, l_pos, pA_only, R_eval, L_eval):
