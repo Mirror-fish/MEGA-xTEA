@@ -187,9 +187,19 @@ if args.only_geno is False:
     print()
     log.logger.info('Preprocessing started.')
     if args.repout_bed is not None:
-        # User provided a pre-converted BED — copy/symlink to expected path
-        import shutil as _shutil
-        _shutil.copy2(args.repout_bed, filenames.repout_bed)
+        # User provided a pre-converted BED — validate and normalize to 5 columns
+        # Expected format: chr, start, end, name:class, strand
+        # If strand (5th column) is missing, add '.' placeholder so downstream
+        # bedtools intersect produces the expected 10-column output.
+        with open(args.repout_bed) as _inf, open(filenames.repout_bed, 'w') as _outf:
+            for _line in _inf:
+                _ls = _line.rstrip('\n').split('\t')
+                if len(_ls) >= 5:
+                    _outf.write(_line)
+                elif len(_ls) == 4:
+                    _outf.write('%s\t.\n' % _line.rstrip('\n'))
+                elif len(_ls) >= 1 and _ls[0].strip():
+                    _outf.write(_line)  # pass through as-is
         log.logger.info('Using pre-converted RepeatMasker BED: %s' % args.repout_bed)
         args._repout_bed_user_provided = True
     else:
