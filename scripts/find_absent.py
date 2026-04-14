@@ -55,7 +55,9 @@ def find_abs(args, params, filenames):
         bed_te_intersect=bed_te.intersect(bed_high_cov, wa=True, wb=True, nonamecheck=True)
         d={}
         for line in bed_te_intersect:
-            ls=str(line).split()
+            ls=str(line).rstrip('\n').split('\t')
+            if len(ls) < 10:
+                continue  # skip malformed intersect lines
             id='\t'.join(ls[5:8])
             if not id in d:
                 d[id]=[]
