@@ -8,8 +8,7 @@ See file LICENSE for details.
 '''
 
 
-import os,shutil,log,traceback,logging
-from Bio.Blast.Applications import NcbiblastnCommandline
+import os,shutil,log,traceback,logging,subprocess
 import ctypes as ct
 import utils
 
@@ -120,7 +119,13 @@ def remove_multimap(args, params, filenames, init_base):
 def blastn_for_mapped(args, params, q_path, db_path, outfpath):
     log.logger.debug('started')
     try:
-        NcbiblastnCommandline(db=db_path, query=q_path, evalue=params.blastn_evalue_for_mapped, perc_identity=params.blastn_ident_for_mapped, word_size=params.blastn_word_size_for_mapped, num_threads=args.p, culling_limit=2, outfmt=6, out=outfpath)()
+        subprocess.run(['blastn', '-db', db_path, '-query', q_path,
+                        '-evalue', str(params.blastn_evalue_for_mapped),
+                        '-perc_identity', str(params.blastn_ident_for_mapped),
+                        '-word_size', str(params.blastn_word_size_for_mapped),
+                        '-num_threads', str(args.p),
+                        '-culling_limit', '2',
+                        '-outfmt', '6', '-out', outfpath], check=True)
     except:
         log.logger.error('\n'+ traceback.format_exc())
         exit(1)

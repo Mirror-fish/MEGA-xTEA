@@ -150,7 +150,8 @@ def check(args, argv, init_base):
         import gzip
         from pybedtools import BedTool
         import matplotlib
-        from Bio.Blast.Applications import NcbiblastnCommandline
+        import subprocess
+        subprocess.run(['blastn', '-version'], capture_output=True, check=True)
     except SystemExit:
         log.logger.debug('\n'+ traceback.format_exc())
         exit(1)
@@ -209,7 +210,8 @@ def check_merge_vcf(args, argv):
 
         # check prerequisite modules
         from pybedtools import BedTool
-        from Bio.Blast.Applications import NcbiblastnCommandline
+        import subprocess
+        subprocess.run(['blastn', '-version'], capture_output=True, check=True)
     except SystemExit:
         log.logger.debug('\n'+ traceback.format_exc())
         exit(1)
