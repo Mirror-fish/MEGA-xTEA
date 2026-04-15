@@ -14,8 +14,9 @@ Designed for **high-speed, large-scale germline MEI detection** in population co
 - 8-10x faster than xTea with comparable SVA detection accuracy
 - TE insertion detection: LINE1, Alu, SVA, HERV-K
 - TE deletion detection (Absent ME) -- unique capability from MEGAnE
-- SVA-specific VNTR-aware filtering from xTea
-- ML-based genotyping (Random Forest) with Gaussian fallback
+- SVA-specific VNTR-aware filtering ported from xTea (structure-aware polyA, VNTR tolerance)
+- ML-based genotyping via Deep Forest (CascadeForestClassifier) or scikit-learn Random Forest
+- 3' transduction enrichment using disc-read mate coordinate clustering
 - Scalable joint calling for massive cohorts (>10,000 samples)
 - VCF output compatible with phasing/imputation tools
 
@@ -28,8 +29,8 @@ post-filtering and genotyping modules into a unified pipeline:
 BAM/CRAM ──> [C++ Core: MEGAnE] ──> Candidate Sites
                    |                        |
                    |-- extract_discordant    |-- SVA Post-Filter [xTea]
-                   |-- extract_unmapped      |-- ML Genotyping [xTea]
-                   +-- k-mer filtering       +-- Transduction [xTea]
+                   |-- extract_unmapped      |-- ML Genotyping [xTea Deep Forest]
+                   +-- k-mer filtering       +-- Transduction Enrichment [xTea]
                                                     |
                                              ──> Filtered VCF
                                                     |
@@ -52,10 +53,10 @@ Python modules in `megaxtea/` provide the accuracy-critical post-processing:
 
 | Module | Origin | Purpose |
 |--------|--------|---------|
-| `sva_filter` | xTea | SVA VNTR-aware consistency relaxation and filtering |
-| `ml_genotype` | xTea | Random Forest genotyping (15-dimensional features) |
+| `sva_filter` | xTea | SVA VNTR-aware filtering with real evidence extraction |
+| `ml_genotype` | xTea | Deep Forest / Random Forest genotyping (15-dim features) |
 | `polyA_detector` | xTea | Structure-aware polyA signal detection |
-| `transduction` | xTea | 3' transduction detection |
+| `transduction` | xTea | 3' transduction detection and enrichment |
 | `te_classifier` | MEGAnE + xTea | Enhanced TE classification with binary encoding |
 | `config` | Both | Central parameter configuration |
 
@@ -67,7 +68,7 @@ Python modules in `megaxtea/` provide the accuracy-critical post-processing:
 - BLAST+ (`ncbi-blast+`)
 - bedtools >= 2.29
 - samtools >= 1.10
-- Python packages: numpy, scipy, scikit-learn, pysam
+- Python packages: numpy, scipy, scikit-learn, pysam, deep-forest
 
 ## Installation
 
@@ -144,6 +145,7 @@ python mega-xtea.py call \
   -t 8 \
   --sva-filter \
   --ml-genotype \
+  --model-path /path/to/DF21_model_1_2/ \
   --detect-deletion
 ```
 
@@ -168,9 +170,11 @@ python mega-xtea.py reshape-vcf \
 
 ### Controlling SVA filtering
 
-The xTea-derived SVA filter is enabled by default. It applies VNTR-aware
-consistency relaxation (cluster-diff cutoff relaxed to 200 bp for SVA) and
-structure-aware polyA detection. To disable:
+The xTea-derived SVA filter is enabled by default. It extracts real evidence
+(chimeric/hybrid counts, consensus hit positions, polyA signals) from MEGAnE's
+BED output and applies VNTR-aware consistency relaxation (cluster-diff cutoff
+relaxed to 200 bp for SVA), structure-aware polyA detection, and multi-tier
+filtering (two-side, one-half-side, one-side). To disable:
 
 ```bash
 python mega-xtea.py call ... --no-sva-filter
@@ -187,14 +191,24 @@ Key SVA filter parameters (see `megaxtea/config.py` `SVAParams`):
 
 ### Genotyping methods
 
-Two methods are available:
+Two ML backends are supported, with Gaussian mixture as fallback:
 
-- `--ml-genotype` (default): xTea's Random Forest classifier using 15-dimensional
-  feature vectors (clip counts, discordant reads, coverage, polyA signals).
-  Trained with 20 estimators and 70/30 train-test split.
+- `--ml-genotype --model-path /path/to/DF21_model_1_2/` (recommended): xTea's
+  Deep Forest classifier (`CascadeForestClassifier` from the `deep-forest`
+  package). The model directory should contain `param.pkl`, `binner.pkl`, and
+  an `estimator/` subdirectory. Predicts labels {1=het 0/1, 2=hom 1/1}.
+- `--ml-genotype --model-path /path/to/model.pkl`: scikit-learn Random Forest
+  model loaded via pickle. Uses the same 15-dimensional feature vector.
+- `--ml-genotype` (without `--model-path`): Falls back to Gaussian mixture
+  fitting from MEGAnE.
 - `--gaussian-genotype`: MEGAnE's three-component Gaussian mixture fitting over
   allele-evidence reads (faster, less accurate). Requires a minimum of 3
   evidence reads per site.
+
+The 15-dimensional feature vector is extracted from MEGAnE's genotyped BED
+columns, approximating xTea's original features (clip consensus ratios,
+discordant consensus ratios, polyA, coverage, clip/disc ratios) from the
+available chimeric, hybrid, spanning, and discordant read counts.
 
 ### Deletion detection
 
@@ -208,14 +222,18 @@ Output: `absent_MEs.bed` and `absent_MEs_transduction.bed`
 
 ### Transduction detection
 
-3' transduction detection uses xTea's simplified algorithm with these key
-parameters:
+3' transduction enrichment runs automatically after SVA filtering. It parses
+the `3transduction_check_master.txt` file generated by MEGAnE's candidate
+detection step, clusters disc-read mate coordinates with a sliding window,
+and identifies dominant source elements using a ratio threshold. Output is
+written to `transduction_annotations.tsv`.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `FLANK_WINDOW_SVA` | 5000 | SVA transduction search window (bp) |
 | `FLANK_WINDOW_LINE1` | 5000 | LINE1 transduction search window (bp) |
 | `MIN_DISC_CUTOFF` | 2 | Minimum discordant reads for transduction call |
+| `TRANSDCT_MULTI_SOURCE_MIN_RATIO` | 0.45 | Minimum ratio for dominant source |
 | `F_MIN_TRSDCT_DISC_MAP_RATIO` | 0.65 | Minimum mapped-read ratio |
 
 ### Large cohort analysis (>1000 samples)
@@ -237,6 +255,7 @@ python mega-xtea.py joint-call \
 | `*.mei.vcf.gz` | MEI insertion calls with genotypes (LINE1, Alu, SVA, HERV-K) |
 | `*.absent_MEs.bed` | TE deletion calls (Absent ME) |
 | `*.absent_MEs_transduction.bed` | Deletions with 3' transduction evidence |
+| `transduction_annotations.tsv` | Transduction source annotations per candidate |
 | `joint_calls.vcf.gz` | Joint-called population VCF across all samples |
 
 VCF ALT allele representations follow standard ME notation:

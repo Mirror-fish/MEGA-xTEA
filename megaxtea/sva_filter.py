@@ -286,25 +286,122 @@ class SVAFilter:
     def parse_megane_candidate_line(line: str) -> SVACandidate:
         """Parse a single line from MEGAnE's candidate TSV into an SVACandidate.
 
-        MEGAnE's candidate output is tab-separated with columns:
-          chrom, pos, ... (varies by step).
-        This parser extracts the minimal fields needed for SVA filtering.
-        Sub-fields not available from MEGAnE are left at defaults and can be
-        populated later from annotation / xTea enrichment steps.
+        MEGAnE BED columns (pre-SVA-filter, 11 cols):
+          0: chr
+          1: start
+          2: end
+          3: TE class (e.g. "Retroposon/SVA")
+          4: MEI_left:ref_pos=X,chimeric=Y,hybrid=Z
+          5: MEI_right:ref_pos=X,chimeric=Y,hybrid=Z
+          6: confidence:high / confidence:low
+          7: unique:yes,...
+          8: subfamily_pred:status=PASS,MEI=SVA_E,740/764,+/+
+          9: 3transduction:no / 3transduction:yes
+         10: ID=XXXX
+
+        Extracts real evidence from these fields to populate SVACandidate.
         """
+        import re
+
         fields = line.rstrip().split("\t")
         cand = SVACandidate()
         cand.raw_line = line.rstrip()
-        if len(fields) >= 2:
-            cand.chrom = fields[0]
-            try:
-                cand.pos = int(fields[1])
-            except ValueError:
-                pass
-        # MEGAnE does not natively produce xTea sub-type labels;
-        # default to TWO_SIDE (conservative -- passes strictest checks).
-        cand.support_type = TWO_SIDE
-        cand.has_polyA = True  # assume polyA present; override if evidence says otherwise
+
+        if len(fields) < 6:
+            return cand
+
+        cand.chrom = fields[0]
+        try:
+            cand.pos = int(fields[1])
+        except ValueError:
+            pass
+
+        # --- Parse chimeric/hybrid counts from col4 and col5 ---
+        left_chimeric = 0
+        left_hybrid = 0
+        right_chimeric = 0
+        right_hybrid = 0
+
+        m = re.search(r'chimeric=(\d+)', fields[4])
+        if m:
+            left_chimeric = int(m.group(1))
+        m = re.search(r'hybrid=(\d+)', fields[4])
+        if m:
+            left_hybrid = int(m.group(1))
+        m = re.search(r'chimeric=(\d+)', fields[5])
+        if m:
+            right_chimeric = int(m.group(1))
+        m = re.search(r'hybrid=(\d+)', fields[5])
+        if m:
+            right_hybrid = int(m.group(1))
+
+        cand.left_clip_cns = left_chimeric
+        cand.right_clip_cns = right_chimeric
+        cand.left_disc_cns = left_hybrid
+        cand.right_disc_cns = right_hybrid
+
+        # --- Infer support_type from evidence ---
+        has_left = (left_chimeric > 0)
+        has_right = (right_chimeric > 0)
+        has_left_disc = (left_hybrid > 0)
+        has_right_disc = (right_hybrid > 0)
+
+        if has_left and has_right:
+            cand.support_type = TWO_SIDE
+        elif (has_left and has_right_disc) or (has_right and has_left_disc):
+            cand.support_type = ONE_HALF_SIDE
+        elif has_left or has_right:
+            cand.support_type = ONE_SIDE
+        else:
+            cand.support_type = OTHER
+
+        # --- Parse consensus hit positions from col8 (subfamily_pred) ---
+        # Patterns:
+        #   MEI=SVA_E,740/764,+/+         → single hit range 740-764
+        #   MEI_left_breakpoint=SVA_F,18,+ → left hit at pos 18
+        #   MEI_right_breakpoint=pA        → right is polyA
+        #   pT                             → polyT (reverse polyA)
+        if len(fields) > 8:
+            pred = fields[8]
+            cand.has_polyA = False
+
+            # Check for polyA/polyT indicators
+            if 'pA' in pred or 'pT' in pred:
+                cand.has_polyA = True
+
+            # Parse single MEI= pattern: MEI=SVA_E,740/764,+/+
+            m_single = re.search(r'MEI=\w+,(\d+)/(\d+),', pred)
+            if m_single:
+                hit_start = int(m_single.group(1))
+                hit_end = int(m_single.group(2))
+                # Use the range for both sides (single alignment)
+                cand.left_cns_hit_start = hit_start
+                cand.right_cns_hit_start = hit_end
+
+            # Parse left breakpoint: MEI_left_breakpoint=SVA_F,18,+
+            m_left = re.search(r'MEI_left_breakpoint=(?!pA|pT)(\w+),(\d+),', pred)
+            if m_left:
+                cand.left_cns_hit_start = int(m_left.group(2))
+
+            # Parse right breakpoint: MEI_right_breakpoint=SVA_C,496,-
+            m_right = re.search(r'MEI_right_breakpoint=(?!pA|pT)(\w+),(\d+),', pred)
+            if m_right:
+                cand.right_cns_hit_start = int(m_right.group(2))
+
+            # Left is polyA/polyT → set high cns hit (in polyA region)
+            if re.search(r'MEI_left_breakpoint=pA|MEI_left_breakpoint=pT', pred):
+                cand.left_cns_hit_start = 2000  # beyond POLYA_START
+                cand.has_polyA = True
+            if re.search(r'MEI_right_breakpoint=pA|MEI_right_breakpoint=pT', pred):
+                cand.right_cns_hit_start = 2000
+                cand.has_polyA = True
+
+        # --- Parse transduction flag from col9 ---
+        if len(fields) > 9:
+            transd = fields[9]
+            if '3transduction:yes' in transd:
+                cand.is_transduction = True
+
         return cand
 
     def filter_megane_output(
@@ -329,35 +426,50 @@ class SVAFilter:
             filt = SVAFilter()
             n = filt.filter_megane_output("candidates.tsv", "filtered.tsv")
         """
-        candidates: List[SVACandidate] = []
+        sva_candidates: List[SVACandidate] = []
+        non_sva_lines: List[str] = []
+
         with open(input_path) as fh:
             for line in fh:
                 if not line.strip() or line.startswith("#"):
                     continue
-                cand = self.parse_megane_candidate_line(line)
+                fields = line.rstrip().split("\t")
+                te_class = fields[3] if len(fields) > 3 else ""
 
-                # Blacklist check
-                if blacklist_regions and cand.chrom in blacklist_regions:
-                    skip = False
-                    for start, end in blacklist_regions[cand.chrom]:
-                        if start <= cand.pos <= end:
-                            skip = True
-                            break
-                    if skip:
-                        continue
+                # Only apply SVA filtering to SVA/Retroposon entries
+                if "SVA" in te_class or "Retroposon" in te_class:
+                    cand = self.parse_megane_candidate_line(line)
 
-                candidates.append(cand)
+                    # Blacklist check
+                    if blacklist_regions and cand.chrom in blacklist_regions:
+                        skip = False
+                        for start, end in blacklist_regions[cand.chrom]:
+                            if start <= cand.pos <= end:
+                                skip = True
+                                break
+                        if skip:
+                            continue
 
-        passed = self.filter_candidates(candidates)
+                    sva_candidates.append(cand)
+                else:
+                    # Non-SVA entries pass through with annotation
+                    non_sva_lines.append(line.rstrip() + "\tnot_in_SVA_copy")
+
+        passed = self.filter_candidates(sva_candidates)
 
         with open(output_path, "w") as fh:
+            # Write non-SVA entries first (pass-through)
+            for raw_line in non_sva_lines:
+                fh.write(raw_line + "\n")
+            # Write SVA entries that passed filtering
             for cand in passed:
                 fh.write(cand.raw_line + "\n")
 
         logger.info(
-            "SVA filter: %d / %d candidates passed", len(passed), len(candidates)
+            "SVA filter: %d / %d SVA candidates passed, %d non-SVA passed through",
+            len(passed), len(sva_candidates), len(non_sva_lines),
         )
-        return len(passed)
+        return len(passed) + len(non_sva_lines)
 
     # ------------------------------------------------------------------
     # Annotation boundary extension for SVA

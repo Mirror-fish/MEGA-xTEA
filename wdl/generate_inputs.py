@@ -45,6 +45,8 @@ def main():
     parser.add_argument("--no-sva-filter", action="store_true", help="Disable SVA filtering")
     parser.add_argument("--gaussian-genotype", action="store_true", help="Use Gaussian instead of ML")
     parser.add_argument("--no-deletion", action="store_true", help="Disable deletion detection")
+    parser.add_argument("--model-tar", default=None, help="Deep Forest model .tar.gz path")
+    parser.add_argument("--model-pkl", default=None, help="Sklearn .pkl model path")
     args = parser.parse_args()
 
     bam_dir = os.path.abspath(args.bam_dir)
@@ -96,6 +98,11 @@ def main():
         "mega_xtea_batch.disk_gb_per_sample": args.disk_gb,
         "mega_xtea_batch.docker_image": args.docker,
     }
+
+    if args.model_tar:
+        inputs["mega_xtea_batch.ml_model_tar"] = os.path.abspath(args.model_tar)
+    if args.model_pkl:
+        inputs["mega_xtea_batch.ml_model_pkl"] = os.path.abspath(args.model_pkl)
 
     json.dump(inputs, sys.stdout, indent=4)
     print()  # trailing newline

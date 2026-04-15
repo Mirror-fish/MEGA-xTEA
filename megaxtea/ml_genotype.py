@@ -163,27 +163,130 @@ def extract_features_from_megane_evidence(evidence: Dict[str, Any]) -> List[floa
     ]
 
 
+def extract_features_from_megane_genotyped_bed(fields: List[str]) -> List[float]:
+    """Extract 15-dim feature vector from MEGAnE's genotyped BED columns.
+
+    MEGAnE genotyped BED (15 columns):
+      col4:  MEI_left:ref_pos=X,chimeric=Y,hybrid=Z
+      col5:  MEI_right:ref_pos=X,chimeric=Y,hybrid=Z
+      col12: tsd_depth: "allele;ratio;structure"
+      col13: spanning:  "allele;count"
+      col14: disc:      "allele;count"
+
+    Maps available MEGAnE evidence to xTea's 15 features with best-effort
+    approximation where exact values are not available.
+
+    注意: MEGAnE 不提供 LCOV/RCOV, polyA counts, concordant pairs 等原始值。
+    这里使用近似值。对于精确的 ML 基因分型, 未来需要修改 MEGAnE 的
+    输出管线以保存原始计数。
+    """
+    import re
+
+    # --- Parse chimeric/hybrid from col4/col5 ---
+    left_chimeric = 0
+    left_hybrid = 0
+    right_chimeric = 0
+    right_hybrid = 0
+
+    if len(fields) > 4:
+        m = re.search(r'chimeric=(\d+)', fields[4])
+        if m:
+            left_chimeric = int(m.group(1))
+        m = re.search(r'hybrid=(\d+)', fields[4])
+        if m:
+            left_hybrid = int(m.group(1))
+    if len(fields) > 5:
+        m = re.search(r'chimeric=(\d+)', fields[5])
+        if m:
+            right_chimeric = int(m.group(1))
+        m = re.search(r'hybrid=(\d+)', fields[5])
+        if m:
+            right_hybrid = int(m.group(1))
+
+    # --- Parse spanning and disc counts from col12/col13 ---
+    spanning_count = 0
+    disc_count = 0
+
+    if len(fields) > 12:
+        parts = fields[12].split(";")
+        if len(parts) >= 2:
+            try:
+                spanning_count = int(float(parts[1]))
+            except (ValueError, IndexError):
+                pass
+    if len(fields) > 13:
+        parts = fields[13].split(";")
+        if len(parts) >= 2:
+            try:
+                disc_count = int(float(parts[1]))
+            except (ValueError, IndexError):
+                pass
+
+    # --- Estimate coverage ---
+    # Without direct LCOV/RCOV values, estimate from total evidence.
+    # A 30x genome typically has ~30 reads at each position.
+    # Use disc + spanning + chimeric as a rough total.
+    total_support = left_chimeric + right_chimeric + left_hybrid + right_hybrid
+    eff_clip = float(left_chimeric + right_chimeric)
+    eff_disc = float(disc_count)
+    eff_fmap = float(spanning_count)
+
+    # Rough coverage estimate: total support reads + spanning + disc
+    # This is imprecise but provides a reasonable normalization factor.
+    est_total = max(eff_clip + eff_fmap + eff_disc + 1, 10)
+    est_lcov = est_total / 2.0
+    est_rcov = est_total / 2.0
+    total_cov = est_lcov + est_rcov
+
+    # Concordant estimate: total_reads - disc - clip
+    est_conc = max(est_total - eff_disc - eff_clip, 0)
+
+    denom_clip = eff_clip + eff_fmap
+    denom_disc = eff_disc + est_conc
+
+    features = [
+        left_chimeric / est_lcov,                             # lclipcns
+        right_chimeric / est_rcov,                            # rclipcns
+        left_hybrid / est_lcov,                               # ldisccns
+        right_hybrid / est_rcov,                              # rdisccns
+        0.0,                                                  # polyA (not available)
+        est_lcov,                                             # lcov
+        est_rcov,                                             # rcov
+        eff_clip / total_cov,                                 # clip
+        eff_fmap / total_cov,                                 # fullmap
+        eff_clip / denom_clip if denom_clip > 0 else 0.0,     # clipratio
+        eff_disc / denom_disc if denom_disc > 0 else 0.0,     # discratio
+        left_chimeric / est_lcov,                             # rawlclip
+        right_chimeric / est_rcov,                            # rawrclip
+        eff_disc / total_cov,                                 # discordant
+        est_conc / total_cov,                                 # concordant
+    ]
+    return features
+
+
 # ---------------------------------------------------------------------------
 # ML Genotyper
 # ---------------------------------------------------------------------------
 
 class MLGenotyper:
-    """Random-Forest-based genotype classifier.
+    """ML-based genotype classifier supporting both sklearn RandomForest
+    and Deep Forest (CascadeForestClassifier) models.
 
-    Wraps sklearn RandomForestClassifier with xTea-compatible feature
-    extraction, training, saving/loading, and prediction interfaces.
+    Wraps either model type with xTea-compatible feature extraction,
+    training, saving/loading, and prediction interfaces.
 
     Usage::
 
         gtyper = MLGenotyper()
-        gtyper.load_model("trained_rf.pkl")
+        gtyper.load_model("DF21_model_1_2")  # directory = Deep Forest
         genotypes = gtyper.predict(feature_matrix)
     """
 
     def __init__(self, n_estimators: int = 20, random_state: int = 0) -> None:
         self.n_estimators = n_estimators
         self.random_state = random_state
-        self.model: Any = None  # sklearn RandomForestClassifier or None
+        self.model: Any = None
+        self._model_type: str = "none"  # "sklearn", "deepforest", or "none"
 
     # ------------------------------------------------------------------
     # Training
@@ -324,16 +427,46 @@ class MLGenotyper:
         logger.info("Model saved to %s", path)
 
     def load_model(self, path: str) -> None:
-        """Load model from pickle file.
+        """Load model from file or directory.
 
-        对应 xTea load_model_from_file, 兼容 Python 2/3 pickle。
+        Supports two formats:
+          - Directory (e.g. DF21_model_1_2/) → Deep Forest CascadeForestClassifier
+          - .pkl file → sklearn RandomForestClassifier (pickle)
+
+        对应 xTea 的两种分类器:
+          GntpClassifier_DF21 使用 CascadeForestClassifier.load(目录)
+          GntpClassifier_sklearn 使用 pickle.load(文件)
         """
-        with open(path, "rb") as fh:
-            if sys.version_info >= (3, 0):
-                self.model = pickle.load(fh, encoding="latin1")
-            else:
-                self.model = pickle.load(fh)
-        logger.info("Model loaded from %s", path)
+        if os.path.isdir(path):
+            # Deep Forest model (directory containing param.pkl + estimator/)
+            try:
+                from deepforest import CascadeForestClassifier
+                self.model = CascadeForestClassifier()
+                self.model.load(path)
+                self._model_type = "deepforest"
+                logger.info("Deep Forest model loaded from %s", path)
+            except ImportError:
+                logger.error(
+                    "deepforest package not installed. "
+                    "Install with: pip install deep-forest"
+                )
+                raise
+        else:
+            # sklearn pickle model
+            try:
+                import joblib
+                self.model = joblib.load(path)
+                self._model_type = "sklearn"
+                logger.info("sklearn model loaded via joblib from %s", path)
+            except Exception:
+                # Fallback to raw pickle with Python 2 compatibility
+                with open(path, "rb") as fh:
+                    if sys.version_info >= (3, 0):
+                        self.model = pickle.load(fh, encoding="latin1")
+                    else:
+                        self.model = pickle.load(fh)
+                self._model_type = "sklearn"
+                logger.info("sklearn model loaded via pickle from %s", path)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -461,7 +594,7 @@ class UnifiedGenotyper:
         self.fallback = GaussianGenotypeFallback()
         self._has_model = False
 
-        if model_path and os.path.isfile(model_path):
+        if model_path and (os.path.isfile(model_path) or os.path.isdir(model_path)):
             self.ml.load_model(model_path)
             self._has_model = True
 

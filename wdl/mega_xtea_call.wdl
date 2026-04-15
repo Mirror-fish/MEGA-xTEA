@@ -41,7 +41,8 @@ task mega_xtea_call {
         Boolean sva_filter = true
         Boolean ml_genotype = true
         Boolean detect_deletion = true
-        File? ml_model_path               # Pre-trained .pkl model (optional)
+        File? ml_model_pkl              # Pre-trained sklearn .pkl model (optional)
+        File? ml_model_tar              # Deep Forest model directory as .tar.gz (optional, preferred)
 
         # ---- Runtime ----
         Int threads = 8
@@ -141,8 +142,16 @@ task mega_xtea_call {
         if ~{if defined(main_chr_list) then "true" else "false"} = "true"; then
             CMD="${CMD} --main-chr ~{select_first([main_chr_list, 'NONE'])}"
         fi
-        if ~{if defined(ml_model_path) then "true" else "false"} = "true"; then
-            CMD="${CMD} --model-path ~{select_first([ml_model_path, 'NONE'])}"
+        if ~{if defined(ml_model_tar) then "true" else "false"} = "true"; then
+            # Extract Deep Forest model directory from tar.gz
+            MODEL_DIR="$(pwd)/ml_model"
+            mkdir -p "${MODEL_DIR}"
+            tar -xzf ~{select_first([ml_model_tar, 'NONE'])} -C "${MODEL_DIR}"
+            # Find the directory containing param.pkl (may be nested)
+            MODEL_PATH=$(dirname $(find "${MODEL_DIR}" -name "param.pkl" -type f | head -1))
+            CMD="${CMD} --model-path ${MODEL_PATH}"
+        elif ~{if defined(ml_model_pkl) then "true" else "false"} = "true"; then
+            CMD="${CMD} --model-path ~{select_first([ml_model_pkl, 'NONE'])}"
         fi
 
         CMD="${CMD} -v"
@@ -164,6 +173,7 @@ task mega_xtea_call {
         File results_tar = "~{sample_name}.results.tar.gz"
         Array[File] vcf_files = glob("output/~{sample_name}/*.vcf*")
         Array[File] bed_files = glob("output/~{sample_name}/*.bed")
+        Array[File] tsv_files = glob("output/~{sample_name}/*.tsv")
         File stdout_log = stdout()
         File stderr_log = stderr()
     }
@@ -215,7 +225,8 @@ workflow mega_xtea_batch {
         Boolean sva_filter = true
         Boolean ml_genotype = true
         Boolean detect_deletion = true
-        File? ml_model_path
+        File? ml_model_pkl
+        File? ml_model_tar
 
         # ---- Runtime per sample ----
         Int threads_per_sample = 8
@@ -247,7 +258,8 @@ workflow mega_xtea_batch {
                 sva_filter          = sva_filter,
                 ml_genotype         = ml_genotype,
                 detect_deletion     = detect_deletion,
-                ml_model_path       = ml_model_path,
+                ml_model_pkl        = ml_model_pkl,
+                ml_model_tar        = ml_model_tar,
                 threads             = threads_per_sample,
                 memory_gb           = memory_gb_per_sample,
                 disk_gb             = disk_gb_per_sample,
@@ -259,6 +271,7 @@ workflow mega_xtea_batch {
         Array[File] all_results_tar = mega_xtea_call.results_tar
         Array[Array[File]] all_vcf_files = mega_xtea_call.vcf_files
         Array[Array[File]] all_bed_files = mega_xtea_call.bed_files
+        Array[Array[File]] all_tsv_files = mega_xtea_call.tsv_files
         Array[File] all_stdout_logs = mega_xtea_call.stdout_log
         Array[File] all_stderr_logs = mega_xtea_call.stderr_log
     }

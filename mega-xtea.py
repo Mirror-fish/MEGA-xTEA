@@ -493,6 +493,96 @@ def cmd_call(args: argparse.Namespace) -> None:
     runner.run("sva_post_filter", step_sva_filter, skip=not args.sva_filter)
 
     # ------------------------------------------------------------------
+    # Step 5.5: Transduction enrichment (xTea-style)
+    #   Parses 3transduction_check_master.txt to identify insertion
+    #   candidates with evidence of 3' transduction, orphan transduction,
+    #   and source element matches.
+    # ------------------------------------------------------------------
+    def step_transduction_enrichment() -> int:
+        from megaxtea.transduction import TransductionDetector, TransductionSource
+        import re
+
+        det = TransductionDetector()
+        master_file = os.path.join(outdir, "3transduction_check_master.txt")
+        if not os.path.isfile(master_file):
+            logger.info("No 3transduction_check_master.txt found; skipping transduction enrichment.")
+            return 0
+
+        # Parse master file: group disc-read mate positions by candidate ID
+        # Format: ID=XXXX\tmapped=readname,chr:start-end(strand)\tmate=readname
+        id_mates: Dict[str, List[Tuple[str, int]]] = {}
+        with open(master_file) as fh:
+            for line in fh:
+                parts = line.rstrip().split("\t")
+                if len(parts) < 2:
+                    continue
+                cand_id = parts[0]  # e.g. "ID=20268;20269;"
+                mapped_info = parts[1]  # e.g. "mapped=readname,chr2:142822078-142822228(+)"
+                # Extract mate chromosome and position
+                m = re.search(r',(\w+):(\d+)-(\d+)\(', mapped_info)
+                if m:
+                    mate_chrom = m.group(1)
+                    mate_start = int(m.group(2))
+                    if cand_id not in id_mates:
+                        id_mates[cand_id] = []
+                    id_mates[cand_id].append((mate_chrom, mate_start))
+
+        # Identify candidates with clustered mate positions (transduction signal)
+        n_transduction = 0
+        transduction_ids: Dict[str, str] = {}  # id -> "source_chr:start-end"
+
+        for cand_id, mates in id_mates.items():
+            if len(mates) < det.tp.MIN_DISC_CUTOFF:
+                continue
+
+            # Cluster mates by genomic proximity
+            # Sort by chrom, then position
+            mates_sorted = sorted(mates, key=lambda x: (x[0], x[1]))
+            # Simple single-linkage clustering with 5000bp window
+            clusters: List[List[Tuple[str, int]]] = []
+            current_cluster: List[Tuple[str, int]] = [mates_sorted[0]]
+            for i in range(1, len(mates_sorted)):
+                chrom_prev, pos_prev = current_cluster[-1]
+                chrom_cur, pos_cur = mates_sorted[i]
+                if chrom_cur == chrom_prev and abs(pos_cur - pos_prev) <= det.tp.FLANK_WINDOW_SVA:
+                    current_cluster.append(mates_sorted[i])
+                else:
+                    clusters.append(current_cluster)
+                    current_cluster = [mates_sorted[i]]
+            clusters.append(current_cluster)
+
+            # Find dominant cluster
+            best_cluster = max(clusters, key=len)
+            if len(best_cluster) >= det.tp.MIN_DISC_CUTOFF:
+                # Check dominance ratio
+                ratio = len(best_cluster) / len(mates)
+                if ratio >= det.tp.TRANSDCT_MULTI_SOURCE_MIN_RATIO:
+                    src_chrom = best_cluster[0][0]
+                    src_start = min(p for _, p in best_cluster)
+                    src_end = max(p for _, p in best_cluster)
+                    transduction_ids[cand_id] = f"{src_chrom}:{src_start}-{src_end}"
+                    n_transduction += 1
+
+        if transduction_ids:
+            logger.info(
+                "Transduction enrichment: %d candidates with transduction signal",
+                n_transduction,
+            )
+            # Write transduction annotation file
+            td_file = os.path.join(outdir, "transduction_annotations.tsv")
+            with open(td_file, "w") as fh:
+                fh.write("#candidate_id\ttransduction_source\tn_disc_mates\n")
+                for cand_id, source in transduction_ids.items():
+                    n_mates = len(id_mates[cand_id])
+                    fh.write(f"{cand_id}\t{source}\t{n_mates}\n")
+        else:
+            logger.info("Transduction enrichment: no transduction signals detected.")
+
+        return n_transduction
+
+    runner.run("transduction_enrichment", step_transduction_enrichment)
+
+    # ------------------------------------------------------------------
     # Step 6: Deletion detection -- absent ME analysis (MEGAnE)
     #   Already handled inside step 4 (candidate_detection) unless
     #   --no-deletion was passed.  This step is a no-op placeholder
@@ -556,15 +646,19 @@ def cmd_call(args: argparse.Namespace) -> None:
 def _run_ml_genotyping(outdir: str, model_path: Optional[str]) -> None:
     """Apply ML-based genotyping to MEGAnE's candidate output.
 
-    Reads MEGAnE's genotyped BED files, extracts features, predicts
-    genotypes via the trained RF model (or Gaussian fallback), and
-    rewrites the BED/VCF with updated genotype calls.
+    Reads MEGAnE's genotyped BED files, extracts features from the actual
+    BED column structure, predicts genotypes via the trained Deep Forest
+    or RF model (or Gaussian fallback), and rewrites the BED with updated
+    genotype calls.
     """
-    from megaxtea.ml_genotype import UnifiedGenotyper
+    from megaxtea.ml_genotype import (
+        UnifiedGenotyper,
+        extract_features_from_megane_genotyped_bed,
+    )
 
     gt = UnifiedGenotyper(model_path=model_path)
 
-    if model_path and os.path.isfile(model_path):
+    if model_path and (os.path.isfile(model_path) or os.path.isdir(model_path)):
         logger.info("ML genotyping with model: %s", model_path)
     else:
         logger.info(
@@ -584,9 +678,8 @@ def _run_ml_genotyping(outdir: str, model_path: Optional[str]) -> None:
 
         logger.info("ML genotyping: processing %s", bed_name)
 
-        # Read candidates and extract features
+        # Read candidates and extract features from actual BED columns
         import numpy as np
-        from megaxtea.ml_genotype import extract_features_from_megane_evidence
 
         lines: List[str] = []
         features_list: List[List[float]] = []
@@ -596,32 +689,9 @@ def _run_ml_genotyping(outdir: str, model_path: Optional[str]) -> None:
                     continue
                 lines.append(line.rstrip())
                 fields = line.rstrip().split("\t")
-                # Build an evidence dict from BED columns.  The exact
-                # column mapping depends on MEGAnE's output format; use
-                # safe defaults for any missing values.
-                evidence: Dict[str, Any] = {}
-                col_map = [
-                    (4, "left_coverage"),
-                    (5, "right_coverage"),
-                    (6, "clipped_reads"),
-                    (7, "fully_mapped_reads"),
-                    (8, "discordant_pairs"),
-                    (9, "concordant_pairs"),
-                    (10, "left_clip_consensus"),
-                    (11, "right_clip_consensus"),
-                    (12, "left_disc_consensus"),
-                    (13, "right_disc_consensus"),
-                    (14, "left_polyA"),
-                    (15, "right_polyA"),
-                    (16, "raw_left_clip"),
-                    (17, "raw_right_clip"),
-                ]
-                for idx, key in col_map:
-                    try:
-                        evidence[key] = float(fields[idx])
-                    except (IndexError, ValueError):
-                        evidence[key] = 0.0
-                features_list.append(extract_features_from_megane_evidence(evidence))
+                features_list.append(
+                    extract_features_from_megane_genotyped_bed(fields)
+                )
 
         if not features_list:
             logger.info("  No candidates in %s; skipping.", bed_name)
@@ -637,10 +707,8 @@ def _run_ml_genotyping(outdir: str, model_path: Optional[str]) -> None:
         with open(bed_path, "w") as fh:
             for raw_line, geno in zip(lines, genotypes):
                 fields = raw_line.split("\t")
-                # Append or replace genotype in last column
+                # Overwrite the genotype field (col 4 in MEGAnE genotyped BED)
                 if len(fields) >= 4:
-                    # Overwrite the genotype field (conventionally the 4th col
-                    # in MEGAnE's genotyped BED)
                     fields[3] = geno
                 fh.write("\t".join(fields) + "\n")
 

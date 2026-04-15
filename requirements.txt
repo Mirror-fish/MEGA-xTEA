@@ -6,3 +6,5 @@ biopython>=1.79
 pybedtools>=0.9
 matplotlib>=3.5
 seaborn>=0.11
+deep-forest>=0.1.7
+joblib>=1.0

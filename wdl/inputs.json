@@ -29,6 +29,7 @@
     "mega_xtea_batch.sva_filter":       true,
     "mega_xtea_batch.ml_genotype":      true,
     "mega_xtea_batch.detect_deletion":  true,
+    "mega_xtea_batch.ml_model_tar":     "/path/to/DF21_model_1_2.tar.gz",
 
     "mega_xtea_batch.threads_per_sample":  8,
     "mega_xtea_batch.memory_gb_per_sample": 16,
