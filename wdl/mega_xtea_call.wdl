@@ -68,7 +68,10 @@ task mega_xtea_call {
         ln -s ~{reference_blast_nhr}   "${REF_DIR}/~{ref_basename}.nhr"
         ln -s ~{reference_blast_nin}   "${REF_DIR}/~{ref_basename}.nin"
         ln -s ~{reference_blast_nsq}   "${REF_DIR}/~{ref_basename}.nsq"
-        ~{if defined(repeat_masker_out) then "ln -s " + repeat_masker_out + " \"${REF_DIR}/" + ref_basename + ".out\"" else "# repeat_masker_out not provided"}
+        
+        if [ "~{defined(repeat_masker_out)}" == "true" ]; then
+            ln -s ~{repeat_masker_out} "${REF_DIR}/~{ref_basename}.out"
+        fi
 
         # Stage BAM/CRAM + index together (auto-detect format)
         BAM_DIR="$(pwd)/bam"
@@ -108,8 +111,11 @@ task mega_xtea_call {
         CMD="${CMD} --sample-name ~{sample_name}"
 
         # Pass repeat masker data (BED preferred over .out)
-        ~{if defined(repeat_masker_bed) then "" else "CMD=\"${CMD} --repeat-masker-out ${REF_DIR}/" + ref_basename + ".out\""}
-        ~{if defined(repeat_masker_bed) then "CMD=\"${CMD} --repeat-masker-bed " + repeat_masker_bed + "\"" else ""}
+        if [ "~{defined(repeat_masker_bed)}" == "true" ]; then
+            CMD="${CMD} --repeat-masker-bed ~{repeat_masker_bed}"
+        else
+            CMD="${CMD} --repeat-masker-out ${REF_DIR}/~{ref_basename}.out"
+        fi
 
         # SVA filter
         if [ "~{sva_filter}" = "true" ]; then
