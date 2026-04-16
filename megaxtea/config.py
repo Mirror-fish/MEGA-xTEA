@@ -83,6 +83,14 @@ class MLGenotypeParams:
     test_size: float = 0.3
     random_state: int = 0
 
+    # BAM re-scan constants (源自 xTea global_values.py)
+    # 用于精确特征提取的窗口和阈值参数
+    TSD_CUTOFF: int = 100              # raw clip counting window (bp)
+    CLIP_EXACT_CLIP_SLACK: int = 3     # effective (AF) clip counting window (bp)
+    DFT_IS: int = 550                  # default insert size for disc/concordant
+    DISC_THRESHOLD: int = 2000         # distance threshold for discordant pairs
+    BWA_HALF_READ_MIN_SCORE: int = 45  # half read length for left/right full-map
+
     # Feature column indices in xTea output (0-based)
     # 特征向量列索引 (对应 xTea 的输出格式)
     IDX_LCLIP_CNS: int = 5

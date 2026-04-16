@@ -610,7 +610,12 @@ def cmd_call(args: argparse.Namespace) -> None:
     # ------------------------------------------------------------------
     def step_genotyping() -> None:
         if args.ml_genotype:
-            _run_ml_genotyping(outdir, args.model_path)
+            _run_ml_genotyping(
+                outdir, args.model_path,
+                bam_path=args.input,
+                ref_path=args.reference,
+                threads=args.threads,
+            )
         else:
             # Gaussian genotyping is already performed by MEGAnE's
             # pipeline in step 4.  Log that we are using the Gaussian
@@ -643,16 +648,22 @@ def cmd_call(args: argparse.Namespace) -> None:
     logger.info("Pipeline finished successfully.")
 
 
-def _run_ml_genotyping(outdir: str, model_path: Optional[str]) -> None:
+def _run_ml_genotyping(
+    outdir: str,
+    model_path: Optional[str],
+    bam_path: Optional[str] = None,
+    ref_path: Optional[str] = None,
+    threads: int = 4,
+) -> None:
     """Apply ML-based genotyping to MEGAnE's candidate output.
 
-    Reads MEGAnE's genotyped BED files, extracts features from the actual
-    BED column structure, predicts genotypes via the trained Deep Forest
-    or RF model (or Gaussian fallback), and rewrites the BED with updated
-    genotype calls.
+    When bam_path and ref_path are provided, performs a BAM re-scan for
+    exact feature extraction (coverage, raw clips, concordant pairs).
+    Falls back to approximate feature extraction when BAM is unavailable.
     """
     from megaxtea.ml_genotype import (
         UnifiedGenotyper,
+        build_exact_feature_vector,
         extract_features_from_megane_genotyped_bed,
     )
 
@@ -665,7 +676,8 @@ def _run_ml_genotyping(outdir: str, model_path: Optional[str]) -> None:
             "No trained ML model provided; using Gaussian-mixture fallback."
         )
 
-    # Process each genotyped BED produced by MEGAnE
+    # Collect BED file paths for BAM scan
+    bed_paths = []
     for bed_name in [
         "MEI_final_gaussian_genotyped.bed",
         "MEI_final_percentile_genotyped.bed",
@@ -673,12 +685,46 @@ def _run_ml_genotyping(outdir: str, model_path: Optional[str]) -> None:
         "absent_MEs_genotyped.bed",
     ]:
         bed_path = os.path.join(outdir, bed_name)
-        if not os.path.isfile(bed_path):
-            continue
+        if os.path.isfile(bed_path):
+            bed_paths.append(bed_path)
 
+    if not bed_paths:
+        logger.info("No genotyped BED files found; skipping ML genotyping.")
+        return
+
+    # --- BAM re-scan for exact features ---
+    bam_features: Dict[str, Any] = {}
+    use_exact = False
+    if bam_path and ref_path and os.path.isfile(bam_path):
+        try:
+            from megaxtea.genotype_features import batch_collect_features
+            features_tsv = os.path.join(outdir, "ml_genotype_features.tsv")
+            bam_features = batch_collect_features(
+                bed_paths=bed_paths,
+                bam_path=bam_path,
+                ref_path=ref_path,
+                output_path=features_tsv,
+                threads=threads,
+            )
+            if bam_features:
+                use_exact = True
+                logger.info(
+                    "Using exact BAM features for %d sites", len(bam_features)
+                )
+        except Exception as e:
+            logger.warning(
+                "BAM feature scan failed, falling back to approximation: %s", e
+            )
+    else:
+        logger.info(
+            "BAM path not available; using approximate feature extraction."
+        )
+
+    # Process each genotyped BED
+    for bed_path in bed_paths:
+        bed_name = os.path.basename(bed_path)
         logger.info("ML genotyping: processing %s", bed_name)
 
-        # Read candidates and extract features from actual BED columns
         import numpy as np
 
         lines: List[str] = []
@@ -689,6 +735,17 @@ def _run_ml_genotyping(outdir: str, model_path: Optional[str]) -> None:
                     continue
                 lines.append(line.rstrip())
                 fields = line.rstrip().split("\t")
+
+                if use_exact and len(fields) >= 2:
+                    site_key = f"{fields[0]}:{fields[1]}"
+                    sf = bam_features.get(site_key)
+                    if sf is not None:
+                        features_list.append(
+                            build_exact_feature_vector(fields, sf)
+                        )
+                        continue
+
+                # Fallback to approximation
                 features_list.append(
                     extract_features_from_megane_genotyped_bed(fields)
                 )
@@ -712,7 +769,12 @@ def _run_ml_genotyping(outdir: str, model_path: Optional[str]) -> None:
                     fields[3] = geno
                 fh.write("\t".join(fields) + "\n")
 
-        logger.info("  %s: %d candidates genotyped", bed_name, len(genotypes))
+        n_exact = sum(1 for _ in lines)
+        logger.info(
+            "  %s: %d candidates genotyped (%s features)",
+            bed_name, len(genotypes),
+            "exact" if use_exact else "approximate",
+        )
 
 
 # ---------------------------------------------------------------------------

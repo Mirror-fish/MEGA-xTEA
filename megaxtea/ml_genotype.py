@@ -264,6 +264,113 @@ def extract_features_from_megane_genotyped_bed(fields: List[str]) -> List[float]
     return features
 
 
+def build_exact_feature_vector(
+    bed_fields: List[str],
+    bam_features: "SiteFeatures",
+) -> List[float]:
+    """Build 15-dim feature vector using exact values from BAM re-scan.
+
+    Combines BED-derived values (clip/disc consensus counts, polyA) with
+    precise BAM-derived values (coverage, raw clips, concordant pairs).
+
+    This replaces the approximation in extract_features_from_megane_genotyped_bed()
+    with exact values from genotype_features.collect_features_one_site().
+
+    BED provides (精确):
+      - left_clip_consensus (col4 chimeric)
+      - right_clip_consensus (col5 chimeric)
+      - left_disc_consensus (col4 hybrid)
+      - right_disc_consensus (col5 hybrid)
+      - left_polyA (col11 R_pA=X), right_polyA (col12 L_pA=X)
+
+    BAM scan provides (精确):
+      - left_coverage, right_coverage
+      - n_af_clip (effective clip), n_full_map (fully mapped)
+      - n_raw_lclip, n_raw_rclip
+      - n_disc_pairs, n_concd_pairs
+      - n_polyA (from clipped sequences)
+    """
+    import re
+    from megaxtea.genotype_features import SiteFeatures
+
+    # --- Parse consensus alignment counts from BED col4/col5 ---
+    left_chimeric = 0
+    left_hybrid = 0
+    right_chimeric = 0
+    right_hybrid = 0
+
+    if len(bed_fields) > 4:
+        m = re.search(r'chimeric=(\d+)', bed_fields[4])
+        if m:
+            left_chimeric = int(m.group(1))
+        m = re.search(r'hybrid=(\d+)', bed_fields[4])
+        if m:
+            left_hybrid = int(m.group(1))
+    if len(bed_fields) > 5:
+        m = re.search(r'chimeric=(\d+)', bed_fields[5])
+        if m:
+            right_chimeric = int(m.group(1))
+        m = re.search(r'hybrid=(\d+)', bed_fields[5])
+        if m:
+            right_hybrid = int(m.group(1))
+
+    # --- Parse polyA from BED col11/col12 (R_pA=X, L_pA=X) ---
+    left_polyA = 0
+    right_polyA = 0
+    for idx in range(11, min(len(bed_fields), 15)):
+        val = bed_fields[idx]
+        m = re.search(r'R_pA=(\d+)', val)
+        if m:
+            right_polyA = int(m.group(1))
+        m = re.search(r'L_pA=(\d+)', val)
+        if m:
+            left_polyA = int(m.group(1))
+
+    # If BED polyA is unavailable, fall back to BAM-detected polyA
+    if left_polyA == 0 and right_polyA == 0 and bam_features.n_polyA > 0:
+        # Split BAM polyA evenly as a rough fallback
+        left_polyA = bam_features.n_polyA // 2
+        right_polyA = bam_features.n_polyA - left_polyA
+
+    # --- Use exact BAM values ---
+    lcov = bam_features.left_coverage
+    rcov = bam_features.right_coverage
+    if lcov < 0.0000000001:
+        lcov = 0.0000000001
+    if rcov < 0.0000000001:
+        rcov = 0.0000000001
+    total_cov = lcov + rcov
+
+    eff_clip = float(bam_features.n_af_clip)
+    eff_fmap = float(bam_features.n_full_map)
+    n_raw_lclip = float(bam_features.n_raw_lclip)
+    n_raw_rclip = float(bam_features.n_raw_rclip)
+    n_disc = float(bam_features.n_disc_pairs)
+    n_conc = float(bam_features.n_concd_pairs)
+
+    denom_clip = eff_clip + eff_fmap
+    denom_disc = n_disc + n_conc
+
+    features = [
+        float(left_chimeric) / lcov,                               # lclipcns
+        float(right_chimeric) / rcov,                              # rclipcns
+        float(left_hybrid) / lcov,                                 # ldisccns
+        float(right_hybrid) / rcov,                                # rdisccns
+        float(left_polyA) / lcov + float(right_polyA) / rcov,      # polyA
+        lcov,                                                       # lcov
+        rcov,                                                       # rcov
+        eff_clip / total_cov,                                       # clip
+        eff_fmap / total_cov,                                       # fullmap
+        eff_clip / denom_clip if denom_clip > 0 else 0.0,           # clipratio
+        n_disc / denom_disc if denom_disc > 0 else 0.0,             # discratio
+        n_raw_lclip / lcov,                                         # rawlclip
+        n_raw_rclip / rcov,                                         # rawrclip
+        n_disc / total_cov,                                         # discordant
+        n_conc / total_cov,                                         # concordant
+    ]
+    return features
+
+
 # ---------------------------------------------------------------------------
 # ML Genotyper
 # ---------------------------------------------------------------------------

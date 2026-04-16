@@ -286,7 +286,7 @@ class SVAFilter:
     def parse_megane_candidate_line(line: str) -> SVACandidate:
         """Parse a single line from MEGAnE's candidate TSV into an SVACandidate.
 
-        MEGAnE BED columns (pre-SVA-filter, 11 cols):
+        MEGAnE BED columns (pre-SVA-filter, 13 cols):
           0: chr
           1: start
           2: end
@@ -298,6 +298,8 @@ class SVAFilter:
           8: subfamily_pred:status=PASS,MEI=SVA_E,740/764,+/+
           9: 3transduction:no / 3transduction:yes
          10: ID=XXXX
+         11: R_pA=N (right polyA count)
+         12: L_pA=N (left polyA count)
 
         Extracts real evidence from these fields to populate SVACandidate.
         """

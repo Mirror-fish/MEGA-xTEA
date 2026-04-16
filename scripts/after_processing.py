@@ -431,7 +431,7 @@ def grouped_mei_to_bed(args, params, filenames):
                             confidence_status='low'
                         else:
                             confidence_status=ls[15]
-                        tmp=[ls[0], ls[1], ls[2], ls[7], 'MEI_left:ref_pos=%s,chimeric=%d,hybrid=%s' % (l_pos, l_chim, ls[12]), 'MEI_right:ref_pos=%s,chimeric=%d,hybrid=%s' % (r_pos, r_chim, ls[13]), 'confidence:%s' % confidence_status, 'unique:%s,50bp_or_longer:%s,orig_conf:%s' % (uniq, len_status, ls[15]), 'subfamily_pred:status=%s,%s' % (pred_status, pred_res), transd_status, 'ID=%s' % ls[14]]
+                        tmp=[ls[0], ls[1], ls[2], ls[7], 'MEI_left:ref_pos=%s,chimeric=%d,hybrid=%s' % (l_pos, l_chim, ls[12]), 'MEI_right:ref_pos=%s,chimeric=%d,hybrid=%s' % (r_pos, r_chim, ls[13]), 'confidence:%s' % confidence_status, 'unique:%s,50bp_or_longer:%s,orig_conf:%s' % (uniq, len_status, ls[15]), 'subfamily_pred:status=%s,%s' % (pred_status, pred_res), transd_status, 'ID=%s' % ls[14], 'R_pA=%s' % ls[5], 'L_pA=%s' % ls[6]]
                         tmp= [ str(i) for i in tmp ]
                         outfile.write('\t'.join(tmp) +'\n')
                 outfile.flush()
