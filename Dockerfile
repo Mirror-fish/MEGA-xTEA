@@ -39,6 +39,14 @@ RUN wget -q https://github.com/samtools/htslib/releases/download/1.19/htslib-1.1
     make install && \
     ldconfig
 
+# Build samtools 1.19 from source (apt samtools 1.10 on 20.04 lacks `depth -@`)
+RUN wget -q https://github.com/samtools/samtools/releases/download/1.19/samtools-1.19.tar.bz2 && \
+    tar xjf samtools-1.19.tar.bz2 && \
+    cd samtools-1.19 && \
+    ./configure --prefix=/usr/local --with-htslib=/usr/local && \
+    make -j$(nproc) && \
+    make install
+
 # Copy MEGA-xTEA source
 WORKDIR /opt/mega-xtea
 COPY cpp/ cpp/
@@ -63,13 +71,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 
-# Runtime dependencies
+# Runtime dependencies (samtools built from source, not apt)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     build-essential \
     python3-dev \
-    samtools \
     bedtools \
     ncbi-blast+ \
     zlib1g-dev \
@@ -78,9 +85,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcurl4 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install htslib runtime library
+# Install htslib + samtools 1.19 from builder
 COPY --from=builder /usr/local/lib/libhts* /usr/local/lib/
 COPY --from=builder /usr/local/include/htslib /usr/local/include/htslib
+COPY --from=builder /usr/local/bin/samtools /usr/local/bin/samtools
 RUN ldconfig
 
 # Install Python dependencies
