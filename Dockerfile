@@ -1,10 +1,13 @@
 # ============================================================
 # MEGA-xTEA Docker Image
 # Multi-stage build: compile C++ core → slim runtime image
+# NOTE: Ubuntu 20.04 (Python 3.8) required for deep-forest
+#       compatibility — deep-forest only has PyPI wheels for
+#       Python 3.7/3.8/3.9 (last release Sept 2022).
 # ============================================================
 
 # ---------- Stage 1: Build ----------
-FROM ubuntu:24.04 AS builder
+FROM ubuntu:20.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -54,7 +57,7 @@ RUN make -j$(nproc)
 RUN ls -la cpp/extract_discordant cpp/extract_unmapped cpp/*.so
 
 # ---------- Stage 2: Runtime ----------
-FROM ubuntu:24.04
+FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
@@ -72,7 +75,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zlib1g-dev \
     libbz2-dev \
     liblzma-dev \
-    libcurl4-openssl-dev \
+    libcurl4 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install htslib runtime library
@@ -82,8 +85,8 @@ RUN ldconfig
 
 # Install Python dependencies
 COPY requirements.txt /tmp/requirements.txt
-RUN pip3 install --no-cache-dir --break-system-packages --upgrade pip setuptools wheel && \
-    pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt && \
+RUN pip3 install --no-cache-dir "pip<24.1" "setuptools<58.0" wheel && \
+    pip3 install --no-cache-dir -r /tmp/requirements.txt && \
     rm /tmp/requirements.txt
 
 # Copy MEGA-xTEA
