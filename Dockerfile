@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libtool \
     pkg-config \
     zlib1g-dev \
+    libncurses5-dev \
     libbz2-dev \
     liblzma-dev \
     libcurl4-openssl-dev \
