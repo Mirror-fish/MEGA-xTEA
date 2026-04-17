@@ -291,15 +291,13 @@ class SVAFilter:
           1: start
           2: end
           3: TE class (e.g. "Retroposon/SVA")
-          4: MEI_left:ref_pos=X,chimeric=Y,hybrid=Z
-          5: MEI_right:ref_pos=X,chimeric=Y,hybrid=Z
+          4: MEI_left:ref_pos=X,chimeric=Y,hybrid=Z,pA=N
+          5: MEI_right:ref_pos=X,chimeric=Y,hybrid=Z,pA=N
           6: confidence:high / confidence:low
           7: unique:yes,...
           8: subfamily_pred:status=PASS,MEI=SVA_E,740/764,+/+
           9: 3transduction:no / 3transduction:yes
          10: ID=XXXX
-         11: R_pA=N (right polyA count)
-         12: L_pA=N (left polyA count)
 
         Extracts real evidence from these fields to populate SVACandidate.
         """

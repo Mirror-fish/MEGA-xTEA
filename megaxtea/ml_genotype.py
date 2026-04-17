@@ -281,7 +281,7 @@ def build_exact_feature_vector(
       - right_clip_consensus (col5 chimeric)
       - left_disc_consensus (col4 hybrid)
       - right_disc_consensus (col5 hybrid)
-      - left_polyA (col11 R_pA=X), right_polyA (col12 L_pA=X)
+      - left_polyA (col4 pA=X in MEI_left), right_polyA (col5 pA=X in MEI_right)
 
     BAM scan provides (精确):
       - left_coverage, right_coverage
@@ -314,17 +314,17 @@ def build_exact_feature_vector(
         if m:
             right_hybrid = int(m.group(1))
 
-    # --- Parse polyA from BED col11/col12 (R_pA=X, L_pA=X) ---
+    # --- Parse polyA from BED col4/col5 (MEI_left:...,pA=X / MEI_right:...,pA=X) ---
     left_polyA = 0
     right_polyA = 0
-    for idx in range(11, min(len(bed_fields), 15)):
-        val = bed_fields[idx]
-        m = re.search(r'R_pA=(\d+)', val)
-        if m:
-            right_polyA = int(m.group(1))
-        m = re.search(r'L_pA=(\d+)', val)
+    if len(bed_fields) > 4:
+        m = re.search(r'pA=(\d+)', bed_fields[4])
         if m:
             left_polyA = int(m.group(1))
+    if len(bed_fields) > 5:
+        m = re.search(r'pA=(\d+)', bed_fields[5])
+        if m:
+            right_polyA = int(m.group(1))
 
     # If BED polyA is unavailable, fall back to BAM-detected polyA
     if left_polyA == 0 and right_polyA == 0 and bam_features.n_polyA > 0:
