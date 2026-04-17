@@ -41,6 +41,15 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
+# deep-forest (last updated Sept 2022) uses np.int/np.float/np.bool
+# which were removed in numpy 1.24. Restore them as aliases so that
+# deep-forest can load and predict without errors.
+for _attr, _builtin in [("int", int), ("float", float),
+                         ("bool", bool), ("complex", complex),
+                         ("str", str)]:
+    if not hasattr(np, _attr):
+        setattr(np, _attr, _builtin)
+
 logger = logging.getLogger(__name__)
 
 # Feature names in order (与 xTea arff 头一致)
