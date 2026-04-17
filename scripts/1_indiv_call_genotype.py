@@ -187,19 +187,39 @@ if args.only_geno is False:
     print()
     log.logger.info('Preprocessing started.')
     if args.repout_bed is not None:
-        # User provided a pre-converted BED — validate and normalize to 5 columns
+        # User provided a pre-converted BED — validate and normalize.
         # Expected format: chr, start, end, name:class, strand
-        # If strand (5th column) is missing, add '.' placeholder so downstream
-        # bedtools intersect produces the expected 10-column output.
+        # Downstream code (process_distant_read.py, pair_breakpoints.py, etc.)
+        # does `name,clas = ls[3].split(':')` so col3 MUST contain a colon.
+        # Common external BED formats may have:
+        #   - 4-col: chr start end name         → add :Unknown class + strand
+        #   - 5-col: chr start end name strand   → add :Unknown class
+        #   - 6-col: chr start end name score strand → remap to 5-col
+        #   - Already correct: chr start end name:class strand
+        _n_fixed = 0
         with open(args.repout_bed) as _inf, open(filenames.repout_bed, 'w') as _outf:
             for _line in _inf:
                 _ls = _line.rstrip('\n').split('\t')
-                if len(_ls) >= 5:
-                    _outf.write(_line)
+                if len(_ls) < 4:
+                    if _ls[0].strip():
+                        _outf.write(_line)
+                    continue
+                # Ensure col3 has name:class format
+                if ':' not in _ls[3]:
+                    _ls[3] = _ls[3] + ':Unknown'
+                    _n_fixed += 1
+                # Handle varying column counts → normalize to 5-col BED
+                if len(_ls) >= 6:
+                    # 6+ cols: chr, start, end, name:class, score, strand, ...
+                    # Use col5 (strand) if it looks like strand, else col4
+                    _strand = _ls[5] if _ls[5] in ('+', '-') else (_ls[4] if _ls[4] in ('+', '-') else '.')
+                    _outf.write('%s\t%s\t%s\t%s\t%s\n' % (_ls[0], _ls[1], _ls[2], _ls[3], _strand))
+                elif len(_ls) == 5:
+                    _outf.write('%s\t%s\t%s\t%s\t%s\n' % (_ls[0], _ls[1], _ls[2], _ls[3], _ls[4]))
                 elif len(_ls) == 4:
-                    _outf.write('%s\t.\n' % _line.rstrip('\n'))
-                elif len(_ls) >= 1 and _ls[0].strip():
-                    _outf.write(_line)  # pass through as-is
+                    _outf.write('%s\t%s\t%s\t%s\t.\n' % (_ls[0], _ls[1], _ls[2], _ls[3]))
+        if _n_fixed > 0:
+            log.logger.info('Normalized %d BED entries: added missing repeat class (name → name:Unknown)' % _n_fixed)
         log.logger.info('Using pre-converted RepeatMasker BED: %s' % args.repout_bed)
         args._repout_bed_user_provided = True
     else:
