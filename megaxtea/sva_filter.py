@@ -340,6 +340,19 @@ class SVAFilter:
         cand.left_disc_cns = left_hybrid
         cand.right_disc_cns = right_hybrid
 
+        # --- Parse polyA counts from col4/col5 (MEI_left:...,pA=N) ---
+        left_pA_count = 0
+        right_pA_count = 0
+        m = re.search(r'pA=(\d+)', fields[4])
+        if m:
+            left_pA_count = int(m.group(1))
+        if len(fields) > 5:
+            m = re.search(r'pA=(\d+)', fields[5])
+            if m:
+                right_pA_count = int(m.group(1))
+        cand.left_polyA = left_pA_count
+        cand.right_polyA = right_pA_count
+
         # --- Infer support_type from evidence ---
         has_left = (left_chimeric > 0)
         has_right = (right_chimeric > 0)
@@ -365,8 +378,14 @@ class SVAFilter:
             pred = fields[8]
             cand.has_polyA = False
 
-            # Check for polyA/polyT indicators
+            # Check for polyA/polyT indicators in BLAST annotation
             if 'pA' in pred or 'pT' in pred:
+                cand.has_polyA = True
+
+            # Also check polyA read counts from col4/col5 (pA=N)
+            # This is the primary polyA signal from MEGAnE's pair_breakpoints.py,
+            # equivalent to xTea's x_polyA.py detection.
+            if left_pA_count > 0 or right_pA_count > 0:
                 cand.has_polyA = True
 
             # Parse single MEI= pattern: MEI=SVA_E,740/764,+/+

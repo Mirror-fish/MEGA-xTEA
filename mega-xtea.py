@@ -625,7 +625,65 @@ def cmd_call(args: argparse.Namespace) -> None:
     runner.run("genotyping", step_genotyping)
 
     # ------------------------------------------------------------------
-    # Step 8: Output -- report results
+    # Step 8: VCF enrichment -- add xTea-style INFO fields
+    # ------------------------------------------------------------------
+    def step_vcf_enrichment() -> int:
+        from megaxtea.vcf_enrichment import (
+            enrich_vcf,
+            load_bam_features,
+            load_transduction_annotations,
+        )
+
+        # Load transduction annotations (written by step 5.5)
+        td_tsv = os.path.join(outdir, "transduction_annotations.tsv")
+        td_map = load_transduction_annotations(td_tsv)
+        if td_map:
+            logger.info("Loaded %d transduction annotations.", len(td_map))
+
+        # Load BAM feature scan results (written by ML genotyping step)
+        feat_tsv = os.path.join(outdir, "ml_genotype_features.tsv")
+        bam_features = load_bam_features(feat_tsv)
+        if bam_features:
+            logger.info("Loaded %d BAM feature records.", len(bam_features))
+
+        vcf_files = sorted(Path(outdir).glob("*_genotyped.vcf"))
+        total_enriched = 0
+
+        for vcf_path in vcf_files:
+            # Find corresponding BED file
+            bed_path = vcf_path.with_suffix(".bed")
+            if not bed_path.exists():
+                # Try alternative naming: replace .vcf with .bed
+                bed_name = vcf_path.stem + ".bed"
+                bed_path = vcf_path.parent / bed_name
+            if not bed_path.exists():
+                logger.warning("No BED file found for %s; skipping enrichment.", vcf_path.name)
+                continue
+
+            # Output enriched VCF (overwrite original)
+            enriched_path = str(vcf_path) + ".enriched.tmp"
+            n = enrich_vcf(
+                vcf_path=str(vcf_path),
+                bed_path=str(bed_path),
+                output_vcf_path=enriched_path,
+                transduction_map=td_map,
+                bam_features=bam_features,
+            )
+            # Replace original with enriched version
+            if os.path.isfile(enriched_path):
+                os.replace(enriched_path, str(vcf_path))
+                logger.info("Enriched %s: %d variants with xTea-style INFO fields.", vcf_path.name, n)
+            total_enriched += n
+
+        if not vcf_files:
+            logger.info("No genotyped VCF files found; skipping enrichment.")
+
+        return total_enriched
+
+    runner.run("vcf_enrichment", step_vcf_enrichment)
+
+    # ------------------------------------------------------------------
+    # Step 9: Output -- report results
     # ------------------------------------------------------------------
     def step_output() -> None:
         vcf_files = sorted(Path(outdir).glob("*_genotyped.vcf"))
