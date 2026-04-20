@@ -229,13 +229,13 @@ def filter(args, params, filenames):
         else:
             log.logger.warning('Not enough data found. Cannot automatically determine thresholds for MEI filtering. Please check if your data contains discordant reads enough for auto-filtering. Proceed anyway.')
             gaussian_executed=False
-            # [PHASE1_TUNABLE] Raised from cutoff=3 to cutoff=10.
-            # Original MEGAnE default (3) was too lenient -- at 30x coverage,
-            # only 2 hybrid + 1 disc could pass.  xTea never allows such low
-            # evidence thresholds.  Set to 10 to reduce false positives when
-            # Gaussian fitting fails due to insufficient candidates.
-            total_read_thresholds=[10]
-            zero_hybrid_total_read_threshold=12
+            # [PHASE1_TUNABLE] Reverted to original MEGAnE defaults.
+            # Raising these thresholds (3→10, 5→12) caused increased FN in
+            # insertion analysis without reducing FP.  Kept at original values;
+            # FP reduction for insertions will be addressed in Phase 2 via
+            # mechanism-level changes rather than threshold tuning.
+            total_read_thresholds=[3]
+            zero_hybrid_total_read_threshold=5
             log.logger.debug('cutoff=%d,zero_hybrid_total_read_threshold=%d' %(total_read_thresholds[0], zero_hybrid_total_read_threshold))
 
         # main

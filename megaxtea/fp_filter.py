@@ -326,6 +326,30 @@ def cluster_consistency_check(
 # Main filtering orchestrator
 # ---------------------------------------------------------------------------
 
+def _is_insertion_bed(bed_path: str) -> bool:
+    """Detect whether a BED file uses the 11-column MEGAnE insertion format.
+
+    Insertion BEDs have col4 starting with 'MEI_left:' containing
+    chimeric/hybrid/ref_pos fields.  Deletion BEDs (absent_MEs) have
+    a different structure (TE names in col4, strand in col5).
+    """
+    basename = os.path.basename(bed_path).lower()
+    if "absent" in basename:
+        return False
+    try:
+        with open(bed_path) as fh:
+            for line in fh:
+                if not line.strip() or line.startswith("#"):
+                    continue
+                fields = line.rstrip().split("\t")
+                if len(fields) > 4:
+                    return "MEI_left" in fields[4] or "chimeric=" in fields[4]
+                return False
+    except (IOError, OSError):
+        pass
+    return True
+
+
 def run_fp_filters(
     bed_path: str,
     bam_features: Dict[str, Dict[str, Any]],
@@ -334,7 +358,8 @@ def run_fp_filters(
     """Run all Phase 1 FP filters on genotyped BED candidates.
 
     Args:
-        bed_path: Path to genotyped BED (11-column MEGAnE format).
+        bed_path: Path to genotyped BED (11-column MEGAnE insertion format,
+                  or deletion BED -- deletion BEDs skip AF/cluster filters).
         bam_features: {chrom:pos: {field: value}} from ml_genotype_features.tsv.
         rmsk_index: Optional RepeatMaskerIndex for divergence filtering.
 
@@ -346,6 +371,13 @@ def run_fp_filters(
     if not os.path.isfile(bed_path):
         return decisions
 
+    # Detect BED format: insertion vs deletion
+    is_insertion = _is_insertion_bed(bed_path)
+    if not is_insertion:
+        logger.info("Detected deletion BED format for %s; "
+                     "skipping AF conflict and cluster consistency filters.",
+                     os.path.basename(bed_path))
+
     n_af_filtered = 0
     n_div_filtered = 0
     n_cluster_filtered = 0
@@ -356,7 +388,7 @@ def run_fp_filters(
             if not line.strip() or line.startswith("#"):
                 continue
             fields = line.rstrip().split("\t")
-            if len(fields) < 10:
+            if len(fields) < 6:
                 continue
 
             n_total += 1
@@ -367,7 +399,7 @@ def run_fp_filters(
 
             decision = FilterDecision(chrom=chrom, pos=pos_0based, var_id=var_id)
 
-            # --- Parse BED evidence for AF check ---
+            # --- Parse BED evidence for AF check (insertion BEDs only) ---
             left_chimeric = 0
             right_chimeric = 0
             left_hybrid = 0
@@ -406,8 +438,8 @@ def run_fp_filters(
             n_disc_pairs = int(bam_f.get("n_disc_pairs", 0))
             n_concd_pairs = int(bam_f.get("n_concd_pairs", 0))
 
-            # --- Filter 1: AF Conflict ---
-            if bam_f:  # Only if BAM features available
+            # --- Filter 1: AF Conflict (insertion BEDs only) ---
+            if is_insertion and bam_f:
                 af_pass, af_reason = af_conflict_check(
                     left_chimeric, right_chimeric,
                     left_hybrid, right_hybrid,
@@ -427,22 +459,20 @@ def run_fp_filters(
                     decision.filters.append("LOW_DIV_REF")
                     n_div_filtered += 1
 
-            # --- Filter 3: Cluster consistency (simplified) ---
-            # Determine support_type from BED col8 (subfamily_pred)
-            support_type = ""
-            if len(fields) > 8:
-                pred = fields[8]
-                # Infer from evidence pattern
+            # --- Filter 3: Cluster consistency (insertion BEDs only) ---
+            if is_insertion:
+                # Determine support_type from evidence pattern
+                support_type = ""
                 if left_chimeric > 0 and right_chimeric > 0:
                     support_type = "two_side"
 
-            if support_type:
-                cl_pass, cl_reason = cluster_consistency_check(
-                    left_ref_pos, right_ref_pos, support_type,
-                )
-                if not cl_pass:
-                    decision.filters.append("CLUSTER_INCONSIST")
-                    n_cluster_filtered += 1
+                if support_type:
+                    cl_pass, cl_reason = cluster_consistency_check(
+                        left_ref_pos, right_ref_pos, support_type,
+                    )
+                    if not cl_pass:
+                        decision.filters.append("CLUSTER_INCONSIST")
+                        n_cluster_filtered += 1
 
             if decision.is_filtered:
                 decisions[var_id or pos_key] = decision
