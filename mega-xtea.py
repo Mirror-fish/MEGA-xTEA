@@ -272,6 +272,7 @@ def cmd_call(args: argparse.Namespace) -> None:
     logger.info("Reference:      %s", args.reference)
     logger.info("Threads:        %d", args.threads)
     logger.info("SVA filter:     %s", "enabled" if args.sva_filter else "disabled")
+    logger.info("SVA BP gap:     %d bp", args.sva_bp_gap)
     logger.info(
         "Genotyping:     %s",
         "ML" if args.ml_genotype else "Gaussian",
@@ -306,7 +307,10 @@ def cmd_call(args: argparse.Namespace) -> None:
             fadb = args.reference + ".db"
 
     runner = StepRunner()
-    env_threads = {"OMP_NUM_THREADS": str(args.threads)}
+    env_threads = {
+        "OMP_NUM_THREADS": str(args.threads),
+        "MEGA_XTEA_SVA_BP_GAP": str(args.sva_bp_gap),
+    }
 
     # ---- Detect required ancillary files from MEGAnE docs ----
     base_dir = Path(__file__).resolve().parent
@@ -1030,6 +1034,9 @@ def build_parser() -> argparse.ArgumentParser:
     # SVA filter toggle
     p_call.add_argument("--sva-filter", dest="sva_filter", action="store_true", default=True, help="Enable xTea SVA-specific post-filtering (default)")
     p_call.add_argument("--no-sva-filter", dest="sva_filter", action="store_false", help="Disable xTea SVA-specific post-filtering")
+    p_call.add_argument("--sva-breakpoint-gap", dest="sva_bp_gap", type=int, default=150,
+                        help="SVA breakpoint pairing gap in bp (default: 150). "
+                             "Larger values recover more SVA candidates but may increase FP.")
 
     # Genotyping method
     p_call.add_argument("--ml-genotype", dest="ml_genotype", action="store_true", default=True, help="Use ML-based genotyping (default)")

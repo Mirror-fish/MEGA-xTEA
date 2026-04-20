@@ -41,6 +41,7 @@ task mega_xtea_call {
         Boolean sva_filter = true
         Boolean ml_genotype = true
         Boolean detect_deletion = true
+        Int sva_breakpoint_gap = 150      # SVA breakpoint pairing gap (bp). Try 100-200.
         File? ml_model_pkl              # Pre-trained sklearn .pkl model (optional)
         File? ml_model_tar              # Deep Forest model directory as .tar.gz (optional, preferred)
 
@@ -123,6 +124,7 @@ task mega_xtea_call {
         else
             CMD="${CMD} --no-sva-filter"
         fi
+        CMD="${CMD} --sva-breakpoint-gap ~{sva_breakpoint_gap}"
 
         # Genotyping method
         if [ "~{ml_genotype}" = "true" ]; then
@@ -231,6 +233,7 @@ workflow mega_xtea_batch {
         Boolean sva_filter = true
         Boolean ml_genotype = true
         Boolean detect_deletion = true
+        Int sva_breakpoint_gap = 150
         File? ml_model_pkl
         File? ml_model_tar
 
@@ -264,6 +267,7 @@ workflow mega_xtea_batch {
                 sva_filter          = sva_filter,
                 ml_genotype         = ml_genotype,
                 detect_deletion     = detect_deletion,
+                sva_breakpoint_gap  = sva_breakpoint_gap,
                 ml_model_pkl        = ml_model_pkl,
                 ml_model_tar        = ml_model_tar,
                 threads             = threads_per_sample,

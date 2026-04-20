@@ -44,6 +44,9 @@ class load:
             self.min_read_num_per_breakpoint_edge=1
             self.max_breakpoint_gap=50
             self.max_TSD_len=50
+            # [PHASE2_TUNABLE] SVA-specific breakpoint gap (default 150bp)
+            # Can be overridden via MEGA_XTEA_SVA_BP_GAP environment variable
+            self.sva_max_breakpoint_gap=150
             self.ref_TE_slop_len=0
             self.retrieve_mapped_seq_threshold=3
             self.blastn_evalue_for_mapped=float('1e-05')
@@ -208,6 +211,14 @@ class load:
                         self.transduction_pA_ratio=float(ls[1])
                     elif ls[0] == 'length_for_3transduction_search':
                         self.length_for_3transduction_search=int(ls[1])
+                    elif ls[0] == 'sva_max_breakpoint_gap':
+                        self.sva_max_breakpoint_gap=int(ls[1])
+            # Environment variable override for SVA breakpoint gap
+            import os
+            _env_sva_gap = os.environ.get('MEGA_XTEA_SVA_BP_GAP')
+            if _env_sva_gap is not None:
+                self.sva_max_breakpoint_gap = int(_env_sva_gap)
+                log.logger.info('SVA breakpoint gap overridden by env MEGA_XTEA_SVA_BP_GAP=%s' % _env_sva_gap)
             params_for_debug=[]
             for k,v in self.__dict__.items():
                 params_for_debug.append('%s=%s' % (k, str(v)))

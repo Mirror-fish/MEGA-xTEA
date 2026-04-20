@@ -107,12 +107,10 @@ def pairing(args, params, filenames):
                 R_added[m][chr]={}
         for m in all_clas:
             pA_MEI=True if m in args.rep_with_pA else False
-            # [PHASE2_TUNABLE] SVA breakpoint gap: relaxed to 150bp (default 50bp)
+            # [PHASE2_TUNABLE] SVA breakpoint gap: use params.sva_max_breakpoint_gap
+            # (default 150bp, overridable via MEGA_XTEA_SVA_BP_GAP env var or WDL input).
             # SVA VNTR regions cause left/right clip positions to drift apart.
-            # xTea uses 200bp in post-filter; 150bp here as pairing-stage compromise.
-            # Test alternatives: 100bp (conservative), 200bp (aggressive).
-            sva_bp_gap = 150  # SVA-specific max breakpoint gap
-            effective_gap = sva_bp_gap if m == 'SVA' or 'SVA' in m else params.max_breakpoint_gap
+            effective_gap = params.sva_max_breakpoint_gap if (m == 'SVA' or 'SVA' in m) else params.max_breakpoint_gap
             for chr in args.main_chrs_set:
                 L_keys=L_poss[m][chr].keys()
                 R_keys=R_poss[m][chr].keys()
