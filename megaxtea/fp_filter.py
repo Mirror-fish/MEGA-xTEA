@@ -294,12 +294,15 @@ def low_div_ref_te_check(
 # [PHASE1_TUNABLE] Maximum allowed gap between left and right breakpoint
 # positions for a "consistent" two-side candidate.
 MAX_CONSISTENT_BP_GAP = 500  # bp
+# [PHASE2_TUNABLE] SVA uses relaxed threshold (A2: activate sva_clip_cluster_diff_cutoff)
+MAX_CONSISTENT_BP_GAP_SVA = 700  # bp -- wider for SVA VNTR
 
 
 def cluster_consistency_check(
     left_ref_pos: int,
     right_ref_pos: int,
     support_type: str,
+    cand_te_type: str = "",
 ) -> Tuple[bool, str]:
     """Simplified cluster consistency: check breakpoint position gap.
 
@@ -316,8 +319,97 @@ def cluster_consistency_check(
         return True, ""  # Missing position data, skip
 
     gap = abs(left_ref_pos - right_ref_pos)
-    if gap > MAX_CONSISTENT_BP_GAP:
+    # A2: SVA uses relaxed threshold matching sva_clip_cluster_diff_cutoff
+    cand_upper = cand_te_type.upper()
+    cutoff = MAX_CONSISTENT_BP_GAP_SVA if ("SVA" in cand_upper or "RETROPOSON" in cand_upper) else MAX_CONSISTENT_BP_GAP
+    if gap > cutoff:
         return False, "CLUSTER_GAP(%dbp)" % gap
+
+    return True, ""
+
+
+# ---------------------------------------------------------------------------
+# 4. Coverage anomaly filter (Phase 2 B1)
+#    xTea x_post_filter.py:1025 -- local coverage > 2× baseline => FP
+# ---------------------------------------------------------------------------
+
+# [PHASE2_TUNABLE] Coverage anomaly multiplier.
+# xTea uses 2× genome-wide median from random sites.
+# We approximate baseline as median of all candidate sites' coverage.
+ABNORMAL_COV_TIMES = 2.0
+
+
+def _compute_coverage_baseline(
+    bam_features: Dict[str, Dict[str, Any]],
+) -> float:
+    """Compute median coverage across all candidate sites as baseline."""
+    covs = []
+    for feat in bam_features.values():
+        lcov = float(feat.get("left_coverage", 0))
+        rcov = float(feat.get("right_coverage", 0))
+        covs.append(lcov + rcov)
+    if not covs:
+        return 0.0
+    covs.sort()
+    mid = len(covs) // 2
+    if len(covs) % 2 == 0:
+        return (covs[mid - 1] + covs[mid]) / 2.0
+    return covs[mid]
+
+
+def coverage_anomaly_check(
+    left_cov: float,
+    right_cov: float,
+    baseline: float,
+) -> Tuple[bool, str]:
+    """Check if local coverage is abnormally high (likely repetitive region FP).
+
+    Returns (pass, reason). pass=True means the candidate is OK.
+    """
+    if baseline <= 0:
+        return True, ""
+    cutoff = baseline * ABNORMAL_COV_TIMES
+    total_cov = left_cov + right_cov
+    if total_cov > cutoff:
+        return False, "HIGH_COV(%.0f>%.0f)" % (total_cov, cutoff)
+    return True, ""
+
+
+# ---------------------------------------------------------------------------
+# 5. PolyA dominant filter (Phase 2 B2)
+#    xTea x_post_filter.py:712 -- both sides polyA/clip > 75% => FP
+# ---------------------------------------------------------------------------
+
+# [PHASE2_TUNABLE] PolyA dominance cutoff.
+# xTea ONE_SIDE_POLYA_CUTOFF = 0.75
+POLYA_DOMINANT_CUTOFF = 0.75
+
+
+def polya_dominant_check(
+    left_chimeric: int,
+    right_chimeric: int,
+    left_polyA: int,
+    right_polyA: int,
+) -> Tuple[bool, str]:
+    """Check if polyA reads dominate both sides (suggests false positive).
+
+    If both sides have polyA/total_clip > 75%, the candidate is likely an
+    artifact of existing polyA sequence rather than a new insertion.
+
+    Returns (pass, reason). pass=True means the candidate is OK.
+    """
+    # Need evidence on both sides to apply this filter
+    left_total = left_chimeric + left_polyA
+    right_total = right_chimeric + right_polyA
+
+    if left_total == 0 or right_total == 0:
+        return True, ""  # Single-side or no evidence, skip
+
+    left_ratio = float(left_polyA) / float(left_total)
+    right_ratio = float(right_polyA) / float(right_total)
+
+    if left_ratio > POLYA_DOMINANT_CUTOFF and right_ratio > POLYA_DOMINANT_CUTOFF:
+        return False, "POLYA_DOMINANT(L=%.0f%%,R=%.0f%%)" % (left_ratio * 100, right_ratio * 100)
 
     return True, ""
 
@@ -381,7 +473,14 @@ def run_fp_filters(
     n_af_filtered = 0
     n_div_filtered = 0
     n_cluster_filtered = 0
+    n_cov_filtered = 0
+    n_polya_filtered = 0
     n_total = 0
+
+    # B1: Compute coverage baseline from all candidate sites
+    cov_baseline = _compute_coverage_baseline(bam_features)
+    if cov_baseline > 0:
+        logger.info("Coverage baseline (median across candidates): %.1f", cov_baseline)
 
     with open(bed_path) as fh:
         for line in fh:
@@ -406,6 +505,8 @@ def run_fp_filters(
             right_hybrid = 0
             left_ref_pos = 0
             right_ref_pos = 0
+            left_polyA = 0
+            right_polyA = 0
 
             if len(fields) > 4:
                 m = re.search(r"chimeric=(\d+)", fields[4])
@@ -417,6 +518,9 @@ def run_fp_filters(
                 m = re.search(r"ref_pos=(\d+)", fields[4])
                 if m:
                     left_ref_pos = int(m.group(1))
+                m = re.search(r"pA=(\d+)", fields[4])
+                if m:
+                    left_polyA = int(m.group(1))
 
             if len(fields) > 5:
                 m = re.search(r"chimeric=(\d+)", fields[5])
@@ -428,6 +532,9 @@ def run_fp_filters(
                 m = re.search(r"ref_pos=(\d+)", fields[5])
                 if m:
                     right_ref_pos = int(m.group(1))
+                m = re.search(r"pA=(\d+)", fields[5])
+                if m:
+                    right_polyA = int(m.group(1))
 
             # --- Get BAM features for this site ---
             pos_key = "%s:%d" % (chrom, pos_0based)
@@ -469,18 +576,42 @@ def run_fp_filters(
                 if support_type:
                     cl_pass, cl_reason = cluster_consistency_check(
                         left_ref_pos, right_ref_pos, support_type,
+                        cand_te_type=cand_te_type,
                     )
                     if not cl_pass:
                         decision.filters.append("CLUSTER_INCONSIST")
                         n_cluster_filtered += 1
+
+            # --- Filter 4: Coverage anomaly (B1) ---
+            if bam_f and cov_baseline > 0:
+                left_cov = float(bam_f.get("left_coverage", 0))
+                right_cov = float(bam_f.get("right_coverage", 0))
+                cov_pass, cov_reason = coverage_anomaly_check(
+                    left_cov, right_cov, cov_baseline,
+                )
+                if not cov_pass:
+                    decision.filters.append("HIGH_COV")
+                    n_cov_filtered += 1
+
+            # --- Filter 5: PolyA dominant (B2, insertion BEDs only) ---
+            if is_insertion:
+                pa_pass, pa_reason = polya_dominant_check(
+                    left_chimeric, right_chimeric,
+                    left_polyA, right_polyA,
+                )
+                if not pa_pass:
+                    decision.filters.append("POLYA_DOMINANT")
+                    n_polya_filtered += 1
 
             if decision.is_filtered:
                 decisions[var_id or pos_key] = decision
 
     logger.info(
         "FP filter results: %d/%d candidates flagged "
-        "(AF_CONFLICT=%d, LOW_DIV_REF=%d, CLUSTER_INCONSIST=%d)",
-        len(decisions), n_total, n_af_filtered, n_div_filtered, n_cluster_filtered,
+        "(AF_CONFLICT=%d, LOW_DIV_REF=%d, CLUSTER_INCONSIST=%d, "
+        "HIGH_COV=%d, POLYA_DOMINANT=%d)",
+        len(decisions), n_total, n_af_filtered, n_div_filtered,
+        n_cluster_filtered, n_cov_filtered, n_polya_filtered,
     )
     return decisions
 
@@ -509,7 +640,9 @@ def apply_fp_filters_to_vcf(
     extra_headers = [
         '##FILTER=<ID=AF_CONFLICT,Description="Failed xTea-style AF quality check (4-ratio test, all must be >7.5%)">\n',
         '##FILTER=<ID=LOW_DIV_REF,Description="Falls within low-divergence same-type reference TE copy">\n',
-        '##FILTER=<ID=CLUSTER_INCONSIST,Description="Breakpoint cluster positions inconsistent (gap >%dbp)">\n' % MAX_CONSISTENT_BP_GAP,
+        '##FILTER=<ID=CLUSTER_INCONSIST,Description="Breakpoint cluster positions inconsistent (gap >%dbp, SVA >%dbp)">\n' % (MAX_CONSISTENT_BP_GAP, MAX_CONSISTENT_BP_GAP_SVA),
+        '##FILTER=<ID=HIGH_COV,Description="Abnormal coverage (>%.0fx median) suggests repetitive region FP">\n' % ABNORMAL_COV_TIMES,
+        '##FILTER=<ID=POLYA_DOMINANT,Description="Both sides polyA dominant (>%.0f%%) suggests artifact">\n' % (POLYA_DOMINANT_CUTOFF * 100),
     ]
 
     with open(vcf_path) as fh:

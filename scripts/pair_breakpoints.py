@@ -107,6 +107,12 @@ def pairing(args, params, filenames):
                 R_added[m][chr]={}
         for m in all_clas:
             pA_MEI=True if m in args.rep_with_pA else False
+            # [PHASE2_TUNABLE] SVA breakpoint gap: relaxed to 150bp (default 50bp)
+            # SVA VNTR regions cause left/right clip positions to drift apart.
+            # xTea uses 200bp in post-filter; 150bp here as pairing-stage compromise.
+            # Test alternatives: 100bp (conservative), 200bp (aggressive).
+            sva_bp_gap = 150  # SVA-specific max breakpoint gap
+            effective_gap = sva_bp_gap if m == 'SVA' or 'SVA' in m else params.max_breakpoint_gap
             for chr in args.main_chrs_set:
                 L_keys=L_poss[m][chr].keys()
                 R_keys=R_poss[m][chr].keys()
@@ -116,7 +122,7 @@ def pairing(args, params, filenames):
                     iter_n=0
                     for l in L_keys:
                         for r in R_keys[iter_n:]:
-                            if -params.max_breakpoint_gap < (l - r) < params.max_TSD_len:
+                            if -effective_gap < (l - r) < params.max_TSD_len:
                                 if pA_MEI is True:
                                     L_pA_num,R_pA_num=0,0
                                     L_pA_id,R_pA_id='NA','NA'
@@ -148,7 +154,7 @@ def pairing(args, params, filenames):
                                         del(L_pA[chr][l])
                                     if r in R_pA[chr]:
                                         del(R_pA[chr][r])
-                            elif (l - r) >= params.max_breakpoint_gap:
+                            elif (l - r) >= effective_gap:
                                 iter_n += 1
                             elif (r - l) >= params.max_TSD_len:
                                 break
