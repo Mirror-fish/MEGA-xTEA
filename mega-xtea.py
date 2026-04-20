@@ -625,6 +625,72 @@ def cmd_call(args: argparse.Namespace) -> None:
     runner.run("genotyping", step_genotyping)
 
     # ------------------------------------------------------------------
+    # Step 7.5: FP filtering -- xTea-style post-filters (Phase 1)
+    # ------------------------------------------------------------------
+    def step_fp_filter() -> int:
+        from megaxtea.fp_filter import (
+            apply_fp_filters_to_vcf,
+            load_repeatmasker_out,
+            run_fp_filters,
+        )
+        from megaxtea.vcf_enrichment import load_bam_features
+
+        # Load RepeatMasker .out index (if available)
+        rmsk_index = None
+        if repout and os.path.isfile(repout):
+            logger.info("Loading RepeatMasker .out for FP divergence filter: %s", repout)
+            rmsk_index = load_repeatmasker_out(repout)
+        else:
+            logger.info("No RepeatMasker .out file; skipping divergence filter.")
+
+        # Load BAM feature scan results
+        feat_tsv = os.path.join(outdir, "ml_genotype_features.tsv")
+        bam_features = load_bam_features(feat_tsv)
+        if bam_features:
+            logger.info("Loaded %d BAM feature records for FP filtering.", len(bam_features))
+
+        # Process each genotyped BED/VCF pair
+        bed_files = sorted(Path(outdir).glob("*_genotyped.bed"))
+        total_filtered = 0
+        total_variants = 0
+
+        for bed_path in bed_files:
+            # Run filters on BED
+            decisions = run_fp_filters(
+                bed_path=str(bed_path),
+                bam_features=bam_features,
+                rmsk_index=rmsk_index,
+            )
+
+            # Find corresponding VCF
+            vcf_path = bed_path.with_suffix(".vcf")
+            if not vcf_path.exists():
+                vcf_path = bed_path.parent / (bed_path.stem + ".vcf")
+            if not vcf_path.exists():
+                logger.warning("No VCF found for %s; filter decisions computed but not applied.", bed_path.name)
+                continue
+
+            # Apply to VCF
+            filtered_path = str(vcf_path) + ".fpfilter.tmp"
+            n_filt, n_tot = apply_fp_filters_to_vcf(
+                vcf_path=str(vcf_path),
+                output_vcf_path=filtered_path,
+                decisions=decisions,
+            )
+            if os.path.isfile(filtered_path):
+                os.replace(filtered_path, str(vcf_path))
+                logger.info("FP filter applied to %s: %d/%d variants filtered.", vcf_path.name, n_filt, n_tot)
+            total_filtered += n_filt
+            total_variants += n_tot
+
+        if not bed_files:
+            logger.info("No genotyped BED files found; skipping FP filtering.")
+
+        return total_filtered
+
+    runner.run("fp_filter", step_fp_filter)
+
+    # ------------------------------------------------------------------
     # Step 8: VCF enrichment -- add xTea-style INFO fields
     # ------------------------------------------------------------------
     def step_vcf_enrichment() -> int:

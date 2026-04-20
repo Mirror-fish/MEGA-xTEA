@@ -857,9 +857,29 @@ def evaluate_discordant(args, params, filenames):
                 disc_read_d[ls[10]]=count
         global disc_thresholds, cn_est_disc
         if len(for_gaussian_fitting) < 10:
-            log.logger.warning('Not enough data found. Will skip allele count estimation from discordant read number. Will use other evidences.')
-            disc_thresholds=False
-            cn_est_disc=False
+            # [PHASE1_TUNABLE] Originally set disc_thresholds=False, completely
+            # skipping discordant read filtering when <10 high-confidence
+            # candidates exist.  This allowed many FPs through.
+            # Now: use a conservative fixed threshold instead of skipping.
+            # Require at least 5 discordant reads (both sides combined) for a
+            # candidate to be genotyped via disc evidence.
+            log.logger.warning('Not enough data for Gaussian fitting of disc reads (n=%d). Using conservative fixed threshold instead of skipping.' % len(for_gaussian_fitting))
+            # [PHASE1_TUNABLE] 4-element list: [mono_high, threshold, bi_high, outlier]
+            # Conservative fixed thresholds when Gaussian fitting is not possible.
+            # mono_high < 3, mono_low 3-5, bi_low 5-8, bi_high 8-15, outlier > 15
+            disc_thresholds=[3, 5, 8, 15]
+            cn_est_disc={}
+            for id in disc_read_d:
+                if disc_read_d[id] < 3:
+                    cn_est_disc[id]=['mono_high', disc_read_d[id]]
+                elif 3 <= disc_read_d[id] < 5:
+                    cn_est_disc[id]=['mono_low', disc_read_d[id]]
+                elif 5 <= disc_read_d[id] < 8:
+                    cn_est_disc[id]=['bi_low', disc_read_d[id]]
+                elif 8 <= disc_read_d[id] < 15:
+                    cn_est_disc[id]=['bi_high', disc_read_d[id]]
+                else:
+                    cn_est_disc[id]=['outlier', disc_read_d[id]]
         else:
             if args.b is not None:
                 input_sample=os.path.basename(args.b)
