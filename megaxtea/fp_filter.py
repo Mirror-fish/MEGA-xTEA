@@ -545,8 +545,15 @@ def run_fp_filters(
             n_disc_pairs = int(bam_f.get("n_disc_pairs", 0))
             n_concd_pairs = int(bam_f.get("n_concd_pairs", 0))
 
-            # --- Filter 1: AF Conflict (insertion BEDs only) ---
-            if is_insertion and bam_f:
+            # SVA candidates are already filtered by sva_filter.py (Step 5)
+            # with SVA-aware logic.  Applying generic filters here would
+            # contradict sva_filter decisions and increase SVA FN.
+            # Only HIGH_COV and CLUSTER_INCONSIST are safe for SVA.
+            cand_upper = cand_te_type.upper()
+            is_sva = "SVA" in cand_upper or "RETROPOSON" in cand_upper
+
+            # --- Filter 1: AF Conflict (insertion BEDs only, skip SVA) ---
+            if is_insertion and bam_f and not is_sva:
                 af_pass, af_reason = af_conflict_check(
                     left_chimeric, right_chimeric,
                     left_hybrid, right_hybrid,
@@ -557,8 +564,10 @@ def run_fp_filters(
                     decision.filters.append("AF_CONFLICT")
                     n_af_filtered += 1
 
-            # --- Filter 2: Low-divergence reference TE copy ---
-            if rmsk_index is not None and len(rmsk_index) > 0:
+            # --- Filter 2: Low-divergence reference TE copy (skip SVA) ---
+            # SVA: sva_filter already handles divergence for one_half/one_side,
+            # and exempts two_side candidates.  Re-applying here kills two_side SVAs.
+            if rmsk_index is not None and len(rmsk_index) > 0 and not is_sva:
                 div_filtered, min_div, div_reason = low_div_ref_te_check(
                     rmsk_index, chrom, pos_0based, cand_te_type,
                 )
@@ -593,8 +602,10 @@ def run_fp_filters(
                     decision.filters.append("HIGH_COV")
                     n_cov_filtered += 1
 
-            # --- Filter 5: PolyA dominant (B2, insertion BEDs only) ---
-            if is_insertion:
+            # --- Filter 5: PolyA dominant (insertion BEDs only, skip SVA) ---
+            # SVA: polyA on both sides is NORMAL (SVA ends in polyA tail).
+            # sva_filter uses consensus-position-aware polyA check instead.
+            if is_insertion and not is_sva:
                 pa_pass, pa_reason = polya_dominant_check(
                     left_chimeric, right_chimeric,
                     left_polyA, right_polyA,
