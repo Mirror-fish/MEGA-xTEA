@@ -692,7 +692,7 @@ def cmd_call(args: argparse.Namespace) -> None:
 
         return total_filtered
 
-    runner.run("fp_filter", step_fp_filter)
+    runner.run("fp_filter", step_fp_filter, skip=True)  # DIAG: skip to isolate SVA regression
 
     # ------------------------------------------------------------------
     # Step 8: VCF enrichment -- add xTea-style INFO fields
@@ -750,7 +750,7 @@ def cmd_call(args: argparse.Namespace) -> None:
 
         return total_enriched
 
-    runner.run("vcf_enrichment", step_vcf_enrichment)
+    runner.run("vcf_enrichment", step_vcf_enrichment, skip=True)  # DIAG: skip to isolate SVA regression
 
     # ------------------------------------------------------------------
     # Step 9: Output -- report results
