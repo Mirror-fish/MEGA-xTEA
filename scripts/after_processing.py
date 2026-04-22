@@ -446,7 +446,20 @@ def grouped_mei_to_bed(args, params, filenames):
         if args.threshold is not None:
             convert_to_bed(params, filenames, filenames.bp_merged_groupu, filenames.bp_final_u)
         pybedtools.cleanup()
-            
+
+        # --- DIAG: Count SVA candidates in output BED files ---
+        for _diag_bed in [filenames.bp_final_g, filenames.bp_final_p, filenames.bp_final_f]:
+            if os.path.exists(_diag_bed):
+                _total = 0
+                _sva_count = 0
+                with open(_diag_bed) as _df:
+                    for _dl in _df:
+                        _total += 1
+                        _dls = _dl.strip().split('\t')
+                        if len(_dls) > 3 and ('SVA' in _dls[3].upper() or 'RETROPOSON' in _dls[3].upper()):
+                            _sva_count += 1
+                log.logger.info('DIAG [after_processing] %s: %d total, %d SVA' % (os.path.basename(_diag_bed), _total, _sva_count))
+
     except:
         log.logger.error('\n'+ traceback.format_exc())
         exit(1)

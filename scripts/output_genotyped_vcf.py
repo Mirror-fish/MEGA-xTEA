@@ -135,8 +135,25 @@ def output_ins_bed_vcf(args, params, filenames, data):
             outfile.flush()
             os.fdatasync(outfile.fileno())
         log.logger.info('%d high-confidence pMEI found.' % count)
+
+        # --- DIAG: Count SVA in genotyped VCF ---
+        _diag_sva_pass = 0
+        _diag_sva_lc = 0
+        _diag_sva_other = 0
+        _diag_sva_total = 0
+        for _vline in out_vcf:
+            if 'Retroposon' in _vline or 'SVA' in _vline:
+                _diag_sva_total += 1
+                if '\tPASS\t' in _vline:
+                    _diag_sva_pass += 1
+                elif '\tLC\t' in _vline or '\tLC;' in _vline:
+                    _diag_sva_lc += 1
+                else:
+                    _diag_sva_other += 1
+        log.logger.info('DIAG [genotyped_vcf] %s: SVA total=%d, PASS=%d, LC=%d, other_filter=%d' % (os.path.basename(filenames.ins_out_vcf), _diag_sva_total, _diag_sva_pass, _diag_sva_lc, _diag_sva_other))
+
         pybedtools.cleanup()
-        
+
     except:
         log.logger.error('\n'+ traceback.format_exc())
         exit(1)

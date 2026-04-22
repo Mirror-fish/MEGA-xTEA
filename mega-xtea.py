@@ -626,6 +626,18 @@ def cmd_call(args: argparse.Namespace) -> None:
             # results directly.
             logger.info("Using MEGAnE Gaussian genotyping (already computed).")
 
+        # --- DIAG: Count SVA in genotyped BEDs after ML genotyping ---
+        for _bf in sorted(Path(outdir).glob("*_genotyped.bed")):
+            _sva_count = 0
+            _total = 0
+            with open(_bf) as _fh:
+                for _line in _fh:
+                    _total += 1
+                    if 'SVA' in _line.upper() or 'RETROPOSON' in _line.upper():
+                        _sva_count += 1
+            if _sva_count > 0:
+                logger.info("DIAG [post-genotyping] %s: %d total, %d SVA", _bf.name, _total, _sva_count)
+
     runner.run("genotyping", step_genotyping)
 
     # ------------------------------------------------------------------
@@ -689,6 +701,29 @@ def cmd_call(args: argparse.Namespace) -> None:
 
         if not bed_files:
             logger.info("No genotyped BED files found; skipping FP filtering.")
+
+        # --- DIAG: Count SVA in VCFs after fp_filter ---
+        for _vf in sorted(Path(outdir).glob("*_genotyped.vcf")):
+            _sva_pass = 0
+            _sva_filtered = 0
+            _sva_tags = {}
+            with open(_vf) as _fh:
+                for _line in _fh:
+                    if _line.startswith('#'):
+                        continue
+                    if 'Retroposon' not in _line and 'SVA' not in _line:
+                        continue
+                    _parts = _line.split('\t')
+                    _filt = _parts[6] if len(_parts) > 6 else ''
+                    if _filt == 'PASS':
+                        _sva_pass += 1
+                    else:
+                        _sva_filtered += 1
+                        for _t in _filt.split(';'):
+                            _sva_tags[_t] = _sva_tags.get(_t, 0) + 1
+            if _sva_pass + _sva_filtered > 0:
+                logger.info("DIAG [fp_filter] %s: SVA PASS=%d, filtered=%d, tags=%s",
+                            _vf.name, _sva_pass, _sva_filtered, dict(_sva_tags))
 
         return total_filtered
 
