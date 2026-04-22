@@ -494,7 +494,7 @@ def cmd_call(args: argparse.Namespace) -> None:
 
         return filtered_count
 
-    runner.run("sva_post_filter", step_sva_filter, skip=not args.sva_filter)
+    runner.run("sva_post_filter", step_sva_filter, skip=True)  # Now runs inside 1_indiv_call_genotype.py
 
     # ------------------------------------------------------------------
     # Step 5.5: Transduction enrichment (xTea-style)

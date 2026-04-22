@@ -355,6 +355,26 @@ if args.only_geno is False:
         import after_processing
         after_processing.grouped_mei_to_bed(args, params, filenames)
         after_processing.retrieve_3transd_reads(args, params, filenames)
+        # --- SVA post-filter (integrated here so it runs BEFORE genotyping) ---
+        # sva_filter must modify MEI_final_*.bed BEFORE output_genotyped_vcf
+        # reads them at line ~540. Previously this was Step 5 in mega-xtea.py
+        # which ran AFTER genotyping, making it dead code.
+        try:
+            import sys as _sys
+            _sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'megaxtea'))
+            from sva_filter import SVAFilter
+            _sva_filt = SVAFilter()
+            import shutil as _shutil
+            for _bed_name in [filenames.bp_final_g, filenames.bp_final_p, filenames.bp_final_f]:
+                if os.path.exists(_bed_name):
+                    _backup = _bed_name + '.pre_sva_filter'
+                    _shutil.copy2(_bed_name, _backup)
+                    _tmp_out = _bed_name + '.sva_tmp'
+                    _n = _sva_filt.filter_megane_output(_bed_name, _tmp_out)
+                    os.replace(_tmp_out, _bed_name)
+                    log.logger.info('SVA filter (inline): %s → %d candidates passed' % (os.path.basename(_bed_name), _n))
+        except Exception as _e:
+            log.logger.warning('SVA filter (inline) failed, continuing without it: %s' % str(_e))
         # del files
         utils.gzip_or_del(args, params, filenames.overhang_fa)
         utils.gzip_or_del(args, params, filenames.similar_rep_list)
