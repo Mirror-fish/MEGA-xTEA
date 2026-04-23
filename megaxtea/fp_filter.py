@@ -552,6 +552,12 @@ def run_fp_filters(
             cand_upper = cand_te_type.upper()
             is_sva = "SVA" in cand_upper or "RETROPOSON" in cand_upper
 
+            if is_sva:
+                logger.debug(
+                    "DIAG BED SVA candidate: ID=%s col3=%s pos=%s:%d is_sva=%s",
+                    var_id, cand_te_type, chrom, pos_0based, is_sva,
+                )
+
             # --- Filter 1: AF Conflict (insertion BEDs only, skip SVA) ---
             if is_insertion and bam_f and not is_sva:
                 af_pass, af_reason = af_conflict_check(
@@ -682,19 +688,36 @@ def apply_fp_filters_to_vcf(
 
             # Find matching decision
             decision = None
-            # Try by ID
-            id_nums = re.findall(r"\d+", var_id)
-            for key, dec in decisions.items():
-                key_nums = re.findall(r"\d+", key)
-                if id_nums and key_nums and id_nums[0] == key_nums[0]:
-                    decision = dec
-                    break
+            # Try exact ID match first (most reliable)
+            id_key = "ID=%s" % var_id if var_id and not var_id.startswith("ID=") else var_id
+            if id_key and id_key in decisions:
+                decision = decisions[id_key]
+            else:
+                # Fallback: try by first digit sequence
+                id_nums = re.findall(r"\d+", var_id)
+                for key, dec in decisions.items():
+                    key_nums = re.findall(r"\d+", key)
+                    if id_nums and key_nums and id_nums[0] == key_nums[0]:
+                        decision = dec
+                        break
             # Fallback by position
             if decision is None:
                 pos_key = "%s:%d" % (chrom, int(pos_1based) - 1)
                 decision = decisions.get(pos_key)
 
             if decision is not None and decision.is_filtered:
+                # Debug: log SVA lines getting AF_CONFLICT
+                info_field = parts[7] if len(parts) > 7 else ""
+                if "AF_CONFLICT" in decision.filters:
+                    svtype_match = re.search(r"SVTYPE=([^;]+)", info_field)
+                    svtype_val = svtype_match.group(1) if svtype_match else "?"
+                    logger.debug(
+                        "DIAG AF_CONFLICT applied: VCF_ID=%s SVTYPE=%s "
+                        "decision_key=%s decision_filters=%s pos=%s:%s",
+                        var_id, svtype_val, decision.var_id or ("%s:%d" % (decision.chrom, decision.pos)),
+                        decision.filters, chrom, pos_1based,
+                    )
+
                 # Add filter tags
                 current_filter = parts[6]
                 new_tags = ";".join(decision.filters)

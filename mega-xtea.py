@@ -702,28 +702,41 @@ def cmd_call(args: argparse.Namespace) -> None:
         if not bed_files:
             logger.info("No genotyped BED files found; skipping FP filtering.")
 
-        # --- DIAG: Count SVA in VCFs after fp_filter ---
+        # --- DIAG: Count SVA in VCFs after fp_filter (use SVTYPE for precise matching) ---
+        import re as _re
         for _vf in sorted(Path(outdir).glob("*_genotyped.vcf")):
             _sva_pass = 0
             _sva_filtered = 0
             _sva_tags = {}
+            _sva_af_lines = []  # capture AF_CONFLICT SVA lines for debugging
             with open(_vf) as _fh:
                 for _line in _fh:
                     if _line.startswith('#'):
                         continue
-                    if 'Retroposon' not in _line and 'SVA' not in _line:
-                        continue
                     _parts = _line.split('\t')
-                    _filt = _parts[6] if len(_parts) > 6 else ''
+                    if len(_parts) < 8:
+                        continue
+                    # Use SVTYPE from INFO field for precise SVA identification
+                    _info = _parts[7]
+                    _svtype_m = _re.search(r"SVTYPE=([^;]+)", _info)
+                    _svtype = _svtype_m.group(1) if _svtype_m else ""
+                    _svtype_upper = _svtype.upper()
+                    if "SVA" not in _svtype_upper and "RETROPOSON" not in _svtype_upper:
+                        continue
+                    _filt = _parts[6]
                     if _filt == 'PASS':
                         _sva_pass += 1
                     else:
                         _sva_filtered += 1
                         for _t in _filt.split(';'):
                             _sva_tags[_t] = _sva_tags.get(_t, 0) + 1
+                        if 'AF_CONFLICT' in _filt:
+                            _sva_af_lines.append("  VCF_ID=%s SVTYPE=%s FILTER=%s" % (_parts[2], _svtype, _filt))
             if _sva_pass + _sva_filtered > 0:
                 logger.info("DIAG [fp_filter] %s: SVA PASS=%d, filtered=%d, tags=%s",
                             _vf.name, _sva_pass, _sva_filtered, dict(_sva_tags))
+            for _afl in _sva_af_lines:
+                logger.info("DIAG [fp_filter] SVA+AF_CONFLICT: %s", _afl)
 
         return total_filtered
 
