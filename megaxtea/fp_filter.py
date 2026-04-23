@@ -482,6 +482,8 @@ def run_fp_filters(
     if cov_baseline > 0:
         logger.info("Coverage baseline (median across candidates): %.1f", cov_baseline)
 
+    _sva_in_vcf_count = 0  # Track SVA candidates seen in BED
+
     with open(bed_path) as fh:
         for line in fh:
             if not line.strip() or line.startswith("#"):
@@ -495,6 +497,15 @@ def run_fp_filters(
             pos_0based = int(fields[1])
             cand_te_type = fields[3]
             var_id = fields[-1] if fields[-1].startswith("ID=") else ""
+
+            # DIAG: Log first SVA-like line to inspect BED column format
+            _upper3 = cand_te_type.upper()
+            if ("SVA" in _upper3 or "RETROPOSON" in _upper3) and _sva_in_vcf_count < 3:
+                logger.debug(
+                    "DIAG BED format sample: ncols=%d col3=[%s] col_last=[%s] fields[:5]=%s",
+                    len(fields), cand_te_type, fields[-1], fields[:5],
+                )
+                _sva_in_vcf_count += 1
 
             decision = FilterDecision(chrom=chrom, pos=pos_0based, var_id=var_id)
 
@@ -569,6 +580,10 @@ def run_fp_filters(
                 if not af_pass:
                     decision.filters.append("AF_CONFLICT")
                     n_af_filtered += 1
+                    logger.debug(
+                        "DIAG BED AF_CONFLICT: ID=%s col3=[%s] pos=%s:%d",
+                        var_id, cand_te_type, chrom, pos_0based,
+                    )
 
             # --- Filter 2: Low-divergence reference TE copy (skip SVA) ---
             # SVA: sva_filter already handles divergence for one_half/one_side,
